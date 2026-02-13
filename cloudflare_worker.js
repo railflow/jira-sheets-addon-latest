@@ -35,6 +35,11 @@ export default {
             return await handleStripeWebhook(request, env);
         }
 
+        // 4.5 Handle Stripe Customer Portal
+        if (path === "/api/stripe/portal") {
+            return await handleStripePortal(request, env);
+        }
+
         // 5. Debug Endpoint
         if (path === "/api/debug") {
             return new Response(JSON.stringify({
@@ -495,4 +500,84 @@ async function handleStaticAssets(request, env) {
     }
 
     return new Response("Asset not found.", { status: 404 });
+}
+
+/**
+ * Handles Stripe Customer Portal Session Creation
+ */
+async function handleStripePortal(request, env) {
+    try {
+        const body = await request.json();
+        const { email, returnUrl } = body;
+
+        if (!email) return new Response("Missing email", { status: 400 });
+        if (!env.LICENSES) return new Response("KV not configured", { status: 500 });
+
+        // 1. Find Customer ID from KV
+        const userDataRaw = await env.LICENSES.get(`user:${email.toLowerCase()}`);
+        if (!userDataRaw) {
+            return new Response(JSON.stringify({ error: "No active subscription found. Please subscribe first." }), {
+                status: 404,
+                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            });
+        }
+
+        const userData = JSON.parse(userDataRaw);
+        const customerId = userData.customer;
+
+        if (!customerId || customerId === 'cus_mock') {
+            return new Response(JSON.stringify({
+                error: "You are currently on a trial or mock license. Please subscribe to a Pro plan to manage your subscription via Stripe."
+            }), {
+                status: 400,
+                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            });
+        }
+
+        // 2. Create Stripe Portal Session
+        const stripeSecret = env.STRIPE_SECRET_KEY;
+        if (!stripeSecret) {
+            return new Response(JSON.stringify({ error: "Stripe connection error." }), {
+                status: 500,
+                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            });
+        }
+
+        const params = new URLSearchParams();
+        params.append("customer", customerId);
+        if (returnUrl) {
+            params.append("return_url", returnUrl);
+        }
+
+        const stripeResponse = await fetch("https://api.stripe.com/v1/billing_portal/sessions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${stripeSecret}`,
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: params.toString()
+        });
+
+        const session = await stripeResponse.json();
+
+        if (!stripeResponse.ok) {
+            throw new Error(session.error ? session.error.message : "Stripe Portal API Error");
+        }
+
+        return new Response(JSON.stringify({
+            url: session.url
+        }), {
+            headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type"
+            }
+        });
+    } catch (e) {
+        console.error(`[Portal Error] ${e.message}`);
+        return new Response(JSON.stringify({ error: e.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        });
+    }
 }

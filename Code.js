@@ -54,8 +54,8 @@ function onEdit(e) {
 
     if (keyIndex === -1) return; // No Key column found
 
-    // VISUAL FEEDBACK: Mark edited cell(s) with light orange background
-    range.setBackground('#ffe6cc');
+    // VISUAL FEEDBACK: Mark edited cell(s) with Orange background
+    range.setBackground('#ff9900');
 
     // Get keys for ALL edited rows
     // Adjust if range includes header (startRow 1) - unlikely due to check above, but mostly safe
@@ -145,6 +145,58 @@ function createHomepageCard() {
  */
 function openSidebarFromCard() {
     showSidebar('config');
+}
+/**
+ * Returns a list of all sheet names in the active spreadsheet
+ */
+function getJiraSheets() {
+    return SpreadsheetApp.getActiveSpreadsheet().getSheets().map(s => s.getName());
+}
+
+/**
+ * Validates if the spreadsheet has required Jira columns (Key, Summary, Status)
+ */
+function validateJiraHeaders(sheetName) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getActiveSheet();
+    if (!sheet) return { valid: false, error: 'Sheet not found' };
+
+    const lastCol = sheet.getLastColumn();
+    if (lastCol < 1) return { valid: false, error: 'Sheet is empty' };
+
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).toLowerCase().trim());
+    const required = ['key', 'summary', 'status'];
+    const missing = required.filter(r => !headers.includes(r));
+
+    return {
+        valid: missing.length === 0,
+        missing: missing
+    };
+}
+
+
+/**
+ * Returns available columns for a specific sheet.
+ */
+function getSheetColumns(sheetName) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getActiveSheet();
+    if (!sheet) return [];
+
+    const lastCol = sheet.getLastColumn();
+    if (lastCol < 1) return [];
+
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    return headers.map(h => {
+        const val = String(h).trim();
+        if (!val) return null;
+        return {
+            id: val,
+            name: val,
+            key: val.toLowerCase().replace(/[^a-z0-9]/g, '')
+        };
+    })
+        .filter(Boolean);
 }
 
 function showConfig() {
@@ -283,8 +335,11 @@ function loadConfig() {
 /**
  * Returns the column headers from the active sheet
  */
-function getSheetHeaders() {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+function getSheetHeaders(sheetName) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getActiveSheet();
+    if (!sheet) return [];
+
     const lastCol = sheet.getLastColumn();
     if (lastCol === 0) return [];
 
@@ -1218,7 +1273,9 @@ function getJiraFilters(config) {
     }
 
     const cleanDomain = config.domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-    const url = `https://${cleanDomain}/rest/api/2/filter/favourite`;
+    // Use search endpoint to get all visible filters, not just favorites
+    // maxResults=100 should cover most users' immediate needs
+    const url = `https://${cleanDomain}/rest/api/2/filter/search?maxResults=100&expand=jql`;
 
     const options = {
         method: 'GET',
@@ -1232,7 +1289,10 @@ function getJiraFilters(config) {
         const response = fetchJira(url, options, config);
         if (response.getResponseCode() === 200) {
             const data = JSON.parse(response.getContentText());
-            return data.map(f => ({ id: f.id, name: f.name, jql: f.jql }));
+            // Search endpoint returns { values: [...] }
+            // We sort by name alphabetically for better UX
+            const filters = (data.values || []).sort((a, b) => a.name.localeCompare(b.name));
+            return filters.map(f => ({ id: f.id, name: f.name, jql: f.jql }));
         }
         return [];
     } catch (e) {
@@ -1666,9 +1726,10 @@ function getJiraProjects(config) {
  * @param {string} chartStyle - 'pie', 'donut', or 'bar'
  * @param {string[]} selectedColumns - Array of column names to visualize
  */
-function generateDashboard(chartStyle, selectedColumns) {
+function generateDashboard(chartStyle, selectedColumns, sourceSheetName) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const dataSheet = ss.getActiveSheet();
+    const dataSheet = sourceSheetName ? ss.getSheetByName(sourceSheetName) : ss.getActiveSheet();
+    if (!dataSheet) throw new Error("Source sheet not found: " + sourceSheetName);
 
     // Validate this looks like a Jira sheet
     const headers = dataSheet.getRange(1, 1, 1, dataSheet.getLastColumn()).getValues()[0];
@@ -1686,43 +1747,45 @@ function generateDashboard(chartStyle, selectedColumns) {
     if (rows.length === 0) throw new Error("No data to visualize.");
 
     // Default columns if none selected
-    const userColumns = selectedColumns && selectedColumns.length > 0
+    const userColumns = (selectedColumns && selectedColumns.length > 0)
         ? selectedColumns
-        : ['status', 'issuetype', 'priority', 'assignee'];
+        : ['status', 'issue type', 'priority', 'assignee'];
 
-    // Deduplicate and validate against actual sheet headers
+    console.log(`[Dashboard] Generating for columns: ${JSON.stringify(userColumns)}`);
+
+    // Helper for fuzzy matching headers
+    const findHeaderIndex = (name) => {
+        const cleanName = String(name).toLowerCase().replace(/\s/g, '').trim();
+        return headers.findIndex(h => {
+            const cleanH = String(h).toLowerCase().replace(/\s/g, '').trim();
+            return cleanH === cleanName || cleanH.includes(cleanName);
+        });
+    };
+
+    // Deduplicate and validate
     const uniqueIndices = new Set();
     const columnsToVisualize = [];
 
     userColumns.forEach(col => {
-        const idx = headers.findIndex(h => String(h).toLowerCase().trim() === String(col).toLowerCase().trim());
+        const idx = findHeaderIndex(col);
         if (idx !== -1 && !uniqueIndices.has(idx)) {
             uniqueIndices.add(idx);
-            columnsToVisualize.push(headers[idx]); // Use actual header case for display
+            columnsToVisualize.push(headers[idx]);
         }
     });
 
     const skipped = [];
-    const MAX_UNIQUE_VALUES = 50; // Skip columns with too many unique values
+    const MAX_UNIQUE_VALUES = 50;
 
-    // Helper to get counts with case-insensitive matching
     const getCounts = (colName) => {
-        // Find index case-insensitively
-        const idx = headers.findIndex(h => String(h).toLowerCase().trim() === String(colName).toLowerCase().trim());
-
+        const idx = findHeaderIndex(colName);
         if (idx === -1) return null;
 
         const counts = {};
-        const colData = rows.map(r => r[idx]); // Extract column data first
-
-        colData.forEach(val => {
-            if (val === "" || val === null || val === undefined) {
-                val = '(Empty)';
-            }
-            // Handle arrays (like labels, components)
-            if (Array.isArray(val)) {
-                val = val.join(', ') || '(Empty)';
-            }
+        rows.forEach(r => {
+            let val = r[idx];
+            if (val === "" || val === null || val === undefined) val = '(Empty)';
+            if (Array.isArray(val)) val = val.join(', ') || '(Empty)';
             counts[val] = (counts[val] || 0) + 1;
         });
         return counts;
@@ -1730,10 +1793,18 @@ function generateDashboard(chartStyle, selectedColumns) {
 
     // Use Active Sheet
     let dashSheet = dataSheet;
-
-    // Determine start column (to the right of data)
     const lastDataCol = dashSheet.getLastColumn();
-    const startX = lastDataCol + 2; // Gap of 1 column
+    const startX = lastDataCol + 2;
+
+    // CLEAR existing dashboard area (to the right of data)
+    try {
+        const maxCols = dashSheet.getMaxColumns();
+        if (maxCols >= startX) {
+            dashSheet.getRange(1, startX, dashSheet.getMaxRows(), maxCols - startX + 1).clear();
+        }
+    } catch (e) {
+        console.warn("Could not clear dashboard area: " + e.message);
+    }
 
     // -- Layout --
     let currentRow = 1;
@@ -1742,38 +1813,24 @@ function generateDashboard(chartStyle, selectedColumns) {
 
     let chartsCreated = 0;
     const CHARTS_PER_ROW = 2;
-    const CHART_HEIGHT_ROWS = 18;
+    const CHART_HEIGHT_ROWS = 20;
 
     const createSection = (title, counts, colOffset) => {
         if (!counts) return false;
-
         const keys = Object.keys(counts);
-
-        // Skip if too many unique values
-        if (keys.length > MAX_UNIQUE_VALUES) {
-            return false;
-        }
+        if (keys.length > MAX_UNIQUE_VALUES) return false;
 
         const startCol = startX + colOffset;
+        dashSheet.getRange(currentRow, startCol).setValue(title).setFontWeight("bold").setFontSize(14);
+        const tableData = keys.map(k => [k, counts[k]]).sort((a, b) => b[1] - a[1]);
 
         // Table
-        dashSheet.getRange(currentRow, startCol).setValue(title).setFontWeight("bold").setFontSize(14);
-        const tableData = keys.map(k => [k, counts[k]]);
-        // Sort by count desc
-        tableData.sort((a, b) => b[1] - a[1]);
-
-        // Write Table
         dashSheet.getRange(currentRow + 2, startCol, tableData.length, 2).setValues(tableData);
-        // Header
         dashSheet.getRange(currentRow + 1, startCol, 1, 2).setValues([["Category", "Count"]]).setFontWeight("bold").setBackground("#f4f5f7");
 
         // Chart
         const range = dashSheet.getRange(currentRow + 1, startCol, tableData.length + 1, 2);
-
-        let chartType = Charts.ChartType.PIE;
-        if (chartStyle === 'bar') {
-            chartType = Charts.ChartType.BAR;
-        }
+        let chartType = chartStyle === 'bar' ? Charts.ChartType.BAR : Charts.ChartType.PIE;
 
         let chartBuilder = dashSheet.newChart()
             .setChartType(chartType)
@@ -1781,22 +1838,16 @@ function generateDashboard(chartStyle, selectedColumns) {
             .setPosition(currentRow, startCol + 2, 0, 0)
             .setOption('title', title + ' Distribution')
             .setOption('width', 400)
-            .setOption('height', 300);
+            .setOption('height', 350);
 
-        if (chartStyle === 'donut') {
-            chartBuilder = chartBuilder.setOption('pieHole', 0.4);
-        }
+        if (chartStyle === 'donut') chartBuilder = chartBuilder.setOption('pieHole', 0.4);
 
-        const chart = chartBuilder.build();
-        dashSheet.insertChart(chart);
-
+        dashSheet.insertChart(chartBuilder.build());
         return true;
     };
 
-    // Render Sections based on selected columns
-    columnsToVisualize.forEach((colName, idx) => {
+    columnsToVisualize.forEach((colName) => {
         const counts = getCounts(colName);
-
         if (!counts) {
             skipped.push(colName + ' (not found)');
             return;
@@ -1807,14 +1858,12 @@ function generateDashboard(chartStyle, selectedColumns) {
             return;
         }
 
-        // Determine position: 2 charts per row
         const colOffset = (chartsCreated % CHARTS_PER_ROW) * 6;
-
         if (chartsCreated > 0 && chartsCreated % CHARTS_PER_ROW === 0) {
             currentRow += CHART_HEIGHT_ROWS;
         }
 
-        const displayName = colName.charAt(0).toUpperCase() + colName.slice(1);
+        const displayName = colName.toString().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
         if (createSection(displayName, counts, colOffset)) {
             chartsCreated++;
         }
@@ -1878,10 +1927,11 @@ function clearScheduledConfig(props) {
  * Generates a Roadmap sheet
  * @param {Object} options - Configuration options { durationMode: 'smart'|'resolution'|'duedate' }
  */
-function generateRoadmap(options) {
+function generateRoadmap(options, sourceSheetName) {
     const durationMode = (options && options.durationMode) || 'smart';
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sourceSheet = ss.getActiveSheet();
+    const sourceSheet = sourceSheetName ? ss.getSheetByName(sourceSheetName) : ss.getActiveSheet();
+    if (!sourceSheet) throw new Error("Source sheet not found: " + sourceSheetName);
 
     const sheetName = sourceSheet.getName();
     if (sheetName === 'Jira Roadmap' || sheetName === 'Jira Capacity Plan') {
@@ -2019,7 +2069,7 @@ function generateRoadmap(options) {
                     try {
                         fetchJiraData(fetchParams);
                         // Recursive call with retry flag to avoid infinite loops
-                        return generateRoadmap({ ...options, isRetry: true });
+                        return generateRoadmap({ ...options, isRetry: true }, sourceSheet.getName());
                     } catch (e) {
                         console.warn("Auto-fetch failed: " + e.message);
                     }
@@ -2388,9 +2438,10 @@ function generateRoadmap(options) {
  * Generates a Capacity Planning sheet with team workload visualization
  * @param {Object} capacityConfig - Configuration for capacity calculation
  */
-function generateCapacityPlan(capacityConfig) {
+function generateCapacityPlan(capacityConfig, sourceSheetName) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sourceSheet = ss.getActiveSheet();
+    const sourceSheet = sourceSheetName ? ss.getSheetByName(sourceSheetName) : ss.getActiveSheet();
+    if (!sourceSheet) throw new Error("Source sheet not found: " + sourceSheetName);
 
     const sheetName = sourceSheet.getName();
     if (sheetName === 'Jira Capacity Plan' || sheetName === 'Jira Roadmap') {
@@ -3154,14 +3205,29 @@ function deleteSelectedJiraIssues(config) {
             }
         }
     });
-
     return results;
+}
+
+// --- Trend Chart ---
+function generateTrendChart(type, period, sourceSheetName) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const dataSheet = sourceSheetName ? ss.getSheetByName(sourceSheetName) : ss.getActiveSheet();
+    if (!dataSheet) throw new Error("Source sheet not found");
+
+    const headers = dataSheet.getRange(1, 1, 1, dataSheet.getLastColumn()).getValues()[0].map(h => String(h).toLowerCase().trim());
+    const dateCol = type === 'created' ? 'created' : (type === 'resolved' ? 'resolutiondate' : 'duedate');
+
+    // Placeholder for trend chart logic
+    // This function would typically process data from dataSheet based on type and period
+    // and then create or update a chart.
+    // For now, it just returns a placeholder message.
+    return `Trend chart for ${type} issues over ${period} from sheet ${dataSheet.getName()} would be generated here.`;
 }
 
 /**
  * Gets the count of selected Jira issues (rows with keys)
  */
-function getSelectedIssueCount(config) {
+function getSelectedIssueCount() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getActiveSheet();
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -3378,7 +3444,7 @@ const PORTAL_API_URL = CLOUDFLARE_WORKER_URL + '/api/stripe/portal'; // Future u
 
 // Stripe Price IDs - UPDATE THESE with your Stripe price IDs
 const STRIPE_PRICES = {
-    PRO_MONTHLY: 'price_1T08UP2qQ0Oq1g5JbXWtMG4n',
+    PRO_MONTHLY: 'price_0T06lCPaYAnupERfYwY8d95p',
     PRO_YEARLY: 'price_0T06jnPaYAnupERfQTenhkHV',
     ENTERPRISE_MONTHLY: 'price_0T072TPaYAnupERfbBilSTH5',
     ENTERPRISE_YEARLY: 'price_0T06yQPaYAnupERfrACbxJKL'
@@ -3498,8 +3564,13 @@ function createManageSubscriptionSession() {
         if (code === 200) {
             return JSON.parse(text);
         } else {
+            let errorMsg = 'Failed to create portal session';
+            try {
+                const errorData = JSON.parse(text);
+                if (errorData.error) errorMsg = errorData.error;
+            } catch (pErr) { }
             console.error('Portal session failed:', code, text);
-            throw new Error('Failed to create portal session');
+            throw new Error(errorMsg);
         }
     } catch (e) {
         throw new Error('Portal error: ' + e.message);
@@ -3514,8 +3585,8 @@ function getPricingInfo() {
     return {
         individual: {
             name: 'Personal License',
-            description: 'For individuals',
-            monthly: { price: '$1/month', priceId: STRIPE_PRICES.PRO_MONTHLY, value: 1 },
+            description: 'Individual Pro license',
+            monthly: { price: '$9/month', priceId: STRIPE_PRICES.PRO_MONTHLY, value: 9 },
             yearly: { price: '$89/year', priceId: STRIPE_PRICES.PRO_YEARLY, value: 89 },
             features: [
                 'Unlimited syncs',
@@ -3525,8 +3596,8 @@ function getPricingInfo() {
                 'Cloudflare Proxy Support'
             ]
         },
-        unlimited: {
-            name: 'Unlimited License',
+        enterprise: {
+            name: 'Enterprise License',
             description: 'Best for large orgs',
             monthly: { price: '$500/month', priceId: STRIPE_PRICES.ENTERPRISE_MONTHLY, value: 500 },
             yearly: { price: '$5000/year', priceId: STRIPE_PRICES.ENTERPRISE_YEARLY, value: 5000 },
@@ -3689,9 +3760,10 @@ function generateTrendChart(type, period) {
  * Generates a Pivot Table configuration
  * @param {Object} config - { row: 'assignee', col: 'status', val: 'count', filterUser: '' }
  */
-function generatePivotTable(config) {
+function generatePivotTable(config, sourceSheetName) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sourceSheet = ss.getActiveSheet();
+    const sourceSheet = sourceSheetName ? ss.getSheetByName(sourceSheetName) : ss.getActiveSheet();
+    if (!sourceSheet) throw new Error("Source sheet not found: " + sourceSheetName);
 
     if (sourceSheet.getName().includes('Jira Pivot')) {
         throw new Error("Cannot generate from existing Pivot sheet. Please switch to your Jira Data sheet.");
@@ -4396,7 +4468,7 @@ function fetchJira(url, options, config) {
     let fetchUrl = url;
     let fetchOptions = { ...options };
 
-    if (config && config.useCloudflare && config.isPro) {
+    if (config && config.useCloudflare) {
         console.log(`[Proxy] Routing request through Cloudflare: ${url}`);
         // Use the baked-in Cloudflare Proxy URL
         const workerUrlString = CLOUDFLARE_WORKER_URL + (CLOUDFLARE_WORKER_URL.includes('?') ? '&' : '?') + "target=" + encodeURIComponent(url);
@@ -4420,7 +4492,7 @@ function fetchJira(url, options, config) {
  * Uses Cloudflare Worker proxy if enabled.
  */
 function fetchAllJira(requests, config) {
-    if (config && config.useCloudflare && config.isPro) {
+    if (config && config.useCloudflare) {
         console.log(`[Proxy] Batch routing ${requests.length} requests through Cloudflare`);
         const proxiedRequests = requests.map(req => {
             const workerUrlString = CLOUDFLARE_WORKER_URL + (CLOUDFLARE_WORKER_URL.includes('?') ? '&' : '?') + "target=" + encodeURIComponent(req.url);
@@ -4640,6 +4712,14 @@ function updateJiraIssuesBatched(params, updates, context = {}) {
         props.setProperty('modifiedKeys', JSON.stringify(modifiedMap));
         if (rangesToClear.length > 0) {
             const CLEAR_CHUNK = 1000;
+            for (let i = 0; i < rangesToClear.length; i += CLEAR_CHUNK) {
+                try {
+                    const rangeList = sheet.getRangeList(rangesToClear.slice(i, i + CLEAR_CHUNK));
+                    rangeList.setBackground('#b6d7a8'); // Light Green
+                } catch (e) { }
+            }
+            SpreadsheetApp.flush();
+            Utilities.sleep(800);
             for (let i = 0; i < rangesToClear.length; i += CLEAR_CHUNK) {
                 try {
                     sheet.getRangeList(rangesToClear.slice(i, i + CLEAR_CHUNK)).setBackground(null);
