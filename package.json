@@ -1,0 +1,34 @@
+{
+    "name": "jira-sheets-addon",
+    "version": "1.0.0",
+    "description": "Jira Sync for Google Sheets - Bi-directional sync between Jira and Google Sheets",
+    "main": "Code.js",
+    "scripts": {
+        "login": "clasp login",
+        "push": "clasp push",
+        "pull": "clasp pull",
+        "deploy": "clasp deploy",
+        "open": "clasp open",
+        "logs": "clasp logs",
+        "versions": "clasp versions",
+        "create": "clasp create --type sheets --title 'Jira Sync'",
+        "worker-login": "wrangler login",
+        "worker-dev": "wrangler dev",
+        "worker-deploy": "wrangler deploy",
+        "worker-secret": "wrangler secret put PROXY_SECRET"
+    },
+    "keywords": [
+        "jira",
+        "google-sheets",
+        "apps-script",
+        "addon",
+        "sync"
+    ],
+    "author": "",
+    "license": "MIT",
+    "devDependencies": {
+        "@google/clasp": "^2.4.2",
+        "@types/google-apps-script": "^1.0.83",
+        "wrangler": "^3.0.0"
+    }
+}

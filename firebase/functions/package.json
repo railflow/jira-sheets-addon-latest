@@ -1,0 +1,26 @@
+{
+    "name": "jira-sync-license-api",
+    "version": "1.0.0",
+    "description": "License management API for Jira Sync Google Sheets Add-on",
+    "main": "index.js",
+    "engines": {
+        "node": "18"
+    },
+    "scripts": {
+        "serve": "firebase emulators:start --only functions",
+        "shell": "firebase functions:shell",
+        "start": "npm run shell",
+        "deploy": "firebase deploy --only functions",
+        "logs": "firebase functions:log"
+    },
+    "dependencies": {
+        "cors": "^2.8.5",
+        "firebase-admin": "^11.11.0",
+        "firebase-functions": "^4.5.0",
+        "stripe": "^14.10.0"
+    },
+    "devDependencies": {
+        "firebase-functions-test": "^3.1.0"
+    },
+    "private": true
+}

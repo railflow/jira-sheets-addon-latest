@@ -1,0 +1,32 @@
+{
+  "timeZone": "America/Los_Angeles",
+  "dependencies": {},
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/spreadsheets.currentonly",
+    "https://www.googleapis.com/auth/script.container.ui",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/userinfo.email"
+  ],
+  "urlFetchWhitelist": [
+    "https://*.atlassian.net/",
+    "https://*.jira.com/",
+    "https://jira-proxy.railflow.workers.dev/"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Jira Sync for Sheets",
+      "logoUrl": "https://raw.githubusercontent.com/your-repo/jira-sheets-addon/main/assets/icon-128x128.png",
+      "homepageTrigger": {
+        "runFunction": "onHomepage"
+      }
+    },
+    "sheets": {
+      "homepageTrigger": {
+        "runFunction": "onHomepage"
+      }
+    }
+  }
+}

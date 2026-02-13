@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira Sync for Google Sheets - Bi-directional Sync Between Jira & Sheets</title>
+    <meta name="description"
+        content="Sync Jira issues directly with Google Sheets. Real-time bi-directional updates, bulk editing, dashboards, and more. Boost your team's productivity.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #0052CC;
+            --primary-dark: #003d99;
+            --accent: #6554C0;
+            --success: #36B37E;
+            --warning: #FFAB00;
+            --bg-dark: #0A0F1C;
+            --bg-card: #111827;
+            --text: #F9FAFB;
+            --text-muted: #9CA3AF;
+            --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --gradient-2: linear-gradient(135deg, #0052CC 0%, #6554C0 100%);
+            --gradient-hero: linear-gradient(180deg, #0A0F1C 0%, #1a1f35 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 1rem 2rem;
+            background: rgba(10, 15, 28, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--gradient-2);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: all 0.3s;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--gradient-2);
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 82, 204, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(0, 82, 204, 0.5);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8rem 2rem 4rem;
+            background: var(--gradient-hero);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(ellipse at 30% 20%, rgba(101, 84, 192, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 80%, rgba(0, 82, 204, 0.15) 0%, transparent 50%);
+        }
+
+        .hero-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            text-align: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(101, 84, 192, 0.2);
+            border: 1px solid rgba(101, 84, 192, 0.3);
+            border-radius: 50px;
+            font-size: 0.85rem;
+            color: #a78bfa;
+            margin-bottom: 2rem;
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 2.5rem;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .hero-visual {
+            margin-top: 4rem;
+            position: relative;
+            padding: 0 100px;
+        }
+
+        .hero-image {
+            max-width: 100%;
+            border-radius: 16px;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .floating-card {
+            position: absolute;
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 0.875rem 1.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            animation: float 3s ease-in-out infinite;
+            white-space: nowrap;
+            z-index: 10;
+        }
+
+        .floating-card.left {
+            left: -80px;
+        }
+
+        .floating-card.right {
+            right: -80px;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        /* Logos Section */
+        .logos {
+            padding: 4rem 2rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .logos-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .logos p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 2rem;
+        }
+
+        .logo-grid {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 3rem;
+            flex-wrap: wrap;
+            opacity: 0.6;
+        }
+
+        .logo-grid img {
+            height: 32px;
+            filter: grayscale(100%) brightness(2);
+        }
+
+        /* Features Section */
+        .features {
+            padding: 6rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .section-header h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .section-header p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            border-color: rgba(101, 84, 192, 0.3);
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.25rem;
+        }
+
+        .feature-icon.blue {
+            background: rgba(0, 82, 204, 0.2);
+            color: #60a5fa;
+        }
+
+        .feature-icon.purple {
+            background: rgba(101, 84, 192, 0.2);
+            color: #a78bfa;
+        }
+
+        .feature-icon.green {
+            background: rgba(54, 179, 126, 0.2);
+            color: #34d399;
+        }
+
+        .feature-icon.orange {
+            background: rgba(255, 171, 0, 0.2);
+            color: #fbbf24;
+        }
+
+        .feature-card h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* How It Works */
+        .how-it-works {
+            padding: 6rem 2rem;
+            background: linear-gradient(180deg, transparent, rgba(101, 84, 192, 0.05));
+        }
+
+        .steps {
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 3rem;
+        }
+
+        .step {
+            display: flex;
+            gap: 2rem;
+            align-items: flex-start;
+        }
+
+        .step-number {
+            width: 60px;
+            height: 60px;
+            background: var(--gradient-2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .step-content h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .step-content p {
+            color: var(--text-muted);
+            font-size: 1rem;
+        }
+
+        /* Pricing */
+        .pricing {
+            padding: 6rem 2rem;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+        }
+
+        .pricing-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 2.5rem;
+            position: relative;
+            transition: all 0.3s;
+        }
+
+        .pricing-card.featured {
+            border-color: var(--accent);
+            transform: scale(1.05);
+        }
+
+        .pricing-card.featured::before {
+            content: 'MOST POPULAR';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--gradient-1);
+            padding: 0.35rem 1rem;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 700;
+        }
+
+        .pricing-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .pricing-card .price {
+            font-size: 3rem;
+            font-weight: 800;
+            margin: 1rem 0;
+        }
+
+        .pricing-card .price span {
+            font-size: 1rem;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        .pricing-card ul {
+            list-style: none;
+            margin: 2rem 0;
+        }
+
+        .pricing-card li {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 0;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .pricing-card li i {
+            color: var(--success);
+        }
+
+        /* FAQ */
+        .faq {
+            padding: 6rem 2rem;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .faq-item {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1.5rem 0;
+        }
+
+        .faq-item h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            cursor: pointer;
+        }
+
+        .faq-item p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* CTA */
+        .cta {
+            padding: 6rem 2rem;
+            text-align: center;
+            background: var(--gradient-2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+        }
+
+        .cta-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .cta h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .cta p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+        }
+
+        /* Footer */
+        footer {
+            padding: 4rem 2rem 2rem;
+            background: var(--bg-card);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 2rem;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 3rem;
+        }
+
+        .footer-col h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .footer-col a {
+            display: block;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            padding: 0.25rem 0;
+            transition: color 0.2s;
+        }
+
+        .footer-col a:hover {
+            color: var(--text);
+        }
+
+        .footer-bottom {
+            max-width: 1200px;
+            margin: 3rem auto 0;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .floating-card {
+                display: none;
+            }
+
+            .step {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .step-number {
+                margin: 0 auto;
+            }
+
+            .pricing-card.featured {
+                transform: none;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .footer-links {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <div class="logo">
+                <div class="logo-icon">
+                    <i data-lucide="refresh-cw" style="width: 20px; height: 20px; color: white;"></i>
+                </div>
+                <span>Jira Sync</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#how-it-works">How It Works</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#faq">FAQ</a>
+                <a href="/docs/">Documentation</a>
+                <a href="#" class="btn btn-primary">Install Free</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">
+                <i data-lucide="sparkles" style="width: 16px; height: 16px;"></i>
+                Now with bi-directional sync
+            </div>
+            <h1>Supercharge Your Jira Workflow with Google Sheets</h1>
+            <p>Sync Jira issues directly to Google Sheets. Edit in bulk, create dashboards, and keep your team aligned —
+                all in real-time.</p>
+            <div class="hero-buttons">
+                <a href="#" class="btn btn-primary">
+                    <i data-lucide="download" style="width: 18px; height: 18px;"></i>
+                    Install from Marketplace
+                </a>
+                <a href="#how-it-works" class="btn btn-outline">
+                    <i data-lucide="play-circle" style="width: 18px; height: 18px;"></i>
+                    See How It Works
+                </a>
+            </div>
+            <div class="hero-visual">
+                <!-- Left side floating cards -->
+                <div class="floating-card left" style="top: 10%;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i data-lucide="check-circle" style="width: 20px; height: 20px; color: #34d399;"></i>
+                        <span style="font-size: 0.9rem;">42 issues synced</span>
+                    </div>
+                </div>
+                <div class="floating-card left" style="top: 35%; animation-delay: 0.5s;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i data-lucide="layers" style="width: 20px; height: 20px; color: #60a5fa;"></i>
+                        <span style="font-size: 0.9rem;">Bulk update 50 rows</span>
+                    </div>
+                </div>
+                <div class="floating-card left" style="top: 60%; animation-delay: 1s;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i data-lucide="columns" style="width: 20px; height: 20px; color: #a78bfa;"></i>
+                        <span style="font-size: 0.9rem;">15 custom columns</span>
+                    </div>
+                </div>
+                <div class="floating-card left" style="top: 85%; animation-delay: 1.5s;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i data-lucide="bar-chart-2" style="width: 20px; height: 20px; color: #f472b6;"></i>
+                        <span style="font-size: 0.9rem;">Dashboard ready</span>
+                    </div>
+                </div>
+
+                <!-- Right side floating cards -->
+                <div class="floating-card right" style="top: 15%; animation-delay: 0.3s;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i data-lucide="zap" style="width: 20px; height: 20px; color: #fbbf24;"></i>
+                        <span style="font-size: 0.9rem;">Real-time updates</span>
+                    </div>
+                </div>
+                <div class="floating-card right" style="top: 40%; animation-delay: 0.8s;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i data-lucide="timer" style="width: 20px; height: 20px; color: #22d3ee;"></i>
+                        <span style="font-size: 0.9rem;">Auto-refresh: 30s</span>
+                    </div>
+                </div>
+                <div class="floating-card right" style="top: 65%; animation-delay: 1.3s;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i data-lucide="target" style="width: 20px; height: 20px; color: #fb923c;"></i>
+                        <span style="font-size: 0.9rem;">Story points: 128</span>
+                    </div>
+                </div>
+                <div class="floating-card right" style="top: 90%; animation-delay: 1.8s;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i data-lucide="calendar" style="width: 20px; height: 20px; color: #4ade80;"></i>
+                        <span style="font-size: 0.9rem;">Roadmap view</span>
+                    </div>
+                </div>
+
+                <img src="images/hero-sync.png" alt="Jira and Google Sheets bi-directional sync visualization"
+                    class="hero-image">
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="section-header">
+            <h2>Everything You Need to Stay Productive</h2>
+            <p>Powerful features designed to streamline your project management workflow</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon blue">
+                    <i data-lucide="refresh-cw" style="width: 24px; height: 24px;"></i>
+                </div>
+                <h3>Bi-directional Sync</h3>
+                <p>Changes in Sheets automatically update Jira, and vice versa. Always stay in sync with your team.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon purple">
+                    <i data-lucide="edit-3" style="width: 24px; height: 24px;"></i>
+                </div>
+                <h3>Bulk Editing</h3>
+                <p>Update dozens of issues at once. Change assignees, priorities, and custom fields in seconds.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon green">
+                    <i data-lucide="bar-chart-2" style="width: 24px; height: 24px;"></i>
+                </div>
+                <h3>Visual Dashboards</h3>
+                <p>Generate beautiful charts and graphs from your Jira data. Perfect for stakeholder updates.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon orange">
+                    <i data-lucide="clock" style="width: 24px; height: 24px;"></i>
+                </div>
+                <h3>Auto-Refresh</h3>
+                <p>Set up automatic syncs at your preferred interval. Your data is always fresh and up-to-date.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon blue">
+                    <i data-lucide="filter" style="width: 24px; height: 24px;"></i>
+                </div>
+                <h3>Custom JQL Queries</h3>
+                <p>Use any JQL query to filter exactly the issues you need. Full flexibility for power users.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon purple">
+                    <i data-lucide="calendar" style="width: 24px; height: 24px;"></i>
+                </div>
+                <h3>Roadmap Planning</h3>
+                <p>Visualize your project timeline with auto-generated Gantt-style roadmaps from issue data.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="how-it-works" id="how-it-works">
+        <div class="section-header">
+            <h2>Up and Running in Minutes</h2>
+            <p>Simple setup, powerful results</p>
+        </div>
+        <div class="steps">
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h3>Install the Add-on</h3>
+                    <p>Get Jira Sync from the Google Workspace Marketplace. It takes just one click to add it to your
+                        Sheets.</p>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h3>Connect Your Jira</h3>
+                    <p>Enter your Jira domain and API token. We use secure authentication to keep your data safe.</p>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h3>Sync & Collaborate</h3>
+                    <p>Choose your JQL query, select columns, and start syncing. Share the sheet with your team and work
+                        together in real-time.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sync Flow Visualization -->
+        <div style="max-width: 700px; margin: 4rem auto 0; text-align: center;">
+            <img src="images/sync-flow.png" alt="Data flowing from Jira to Google Sheets and back"
+                style="max-width: 100%; border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);">
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1.5rem;">
+                <i data-lucide="arrow-left-right" style="width: 16px; height: 16px; vertical-align: middle;"></i>
+                Real-time bi-directional sync keeps your data in perfect harmony
+            </p>
+        </div>
+    </section>
+
+    <!-- Pricing -->
+    <section class="pricing" id="pricing">
+        <div class="section-header">
+            <h2>Simple, Transparent Pricing</h2>
+            <p>Start free, upgrade when you need more power</p>
+        </div>
+        <div class="pricing-grid">
+            <div class="pricing-card">
+                <h3>Free</h3>
+                <p style="color: var(--text-muted);">For individuals</p>
+                <div class="price">$0<span>/month</span></div>
+                <ul>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Up to 100 issues</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Basic JQL queries</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Manual refresh</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Standard columns</li>
+                </ul>
+                <a href="#" class="btn btn-outline" style="width: 100%; justify-content: center;">Get Started</a>
+            </div>
+            <div class="pricing-card featured">
+                <h3>Pro</h3>
+                <p style="color: var(--text-muted);">For power users</p>
+                <div class="price">$9.99<span>/month</span></div>
+                <ul>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Unlimited issues</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Advanced JQL</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Auto-refresh</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Custom fields</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Priority support</li>
+                </ul>
+                <a href="#" class="btn btn-primary" style="width: 100%; justify-content: center;">Upgrade to Pro</a>
+            </div>
+            <div class="pricing-card">
+                <h3>Enterprise</h3>
+                <p style="color: var(--text-muted);">For teams</p>
+                <div class="price">$49<span>/month</span></div>
+                <ul>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Everything in Pro</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Domain-wide access</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Team management</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> Dedicated support</li>
+                    <li><i data-lucide="check" style="width: 18px; height: 18px;"></i> API access</li>
+                </ul>
+                <a href="#" class="btn btn-outline" style="width: 100%; justify-content: center;">Contact Sales</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="faq" id="faq">
+        <div class="section-header">
+            <h2>Frequently Asked Questions</h2>
+        </div>
+        <div class="faq-item">
+            <h3>Is my Jira data secure?</h3>
+            <p>Absolutely. We use secure OAuth authentication and never store your API tokens on our servers. All data
+                transfers are encrypted.</p>
+        </div>
+        <div class="faq-item">
+            <h3>Can I sync multiple Jira projects?</h3>
+            <p>Yes! Use JQL queries to pull issues from any project or combination of projects. Each sheet can have its
+                own query.</p>
+        </div>
+        <div class="faq-item">
+            <h3>Does it work with Jira Cloud and Server?</h3>
+            <p>Currently we support Jira Cloud. Server/Data Center support is on our roadmap.</p>
+        </div>
+        <div class="faq-item">
+            <h3>Can I cancel my subscription anytime?</h3>
+            <p>Yes, you can cancel anytime from your account settings. No questions asked, no hidden fees.</p>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta">
+        <div class="cta-content">
+            <h2>Ready to Supercharge Your Workflow?</h2>
+            <p>Join thousands of teams using Jira Sync to stay productive</p>
+            <a href="#" class="btn"
+                style="background: white; color: var(--primary); font-weight: 700; padding: 1rem 2rem; font-size: 1rem;">
+                <i data-lucide="download" style="width: 20px; height: 20px;"></i>
+                Install Jira Sync — It's Free
+            </a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="logo">
+                <div class="logo-icon">
+                    <i data-lucide="refresh-cw" style="width: 20px; height: 20px; color: white;"></i>
+                </div>
+                <span>Jira Sync</span>
+            </div>
+            <div class="footer-links">
+                <div class="footer-col">
+                    <h4>Product</h4>
+                    <a href="#features">Features</a>
+                    <a href="#pricing">Pricing</a>
+                    <a href="#">Changelog</a>
+                </div>
+                <div class="footer-col">
+                    <h4>Resources</h4>
+                    <a href="/docs/">Documentation</a>
+                    <a href="#">Support</a>
+                    <a href="#faq">FAQ</a>
+                </div>
+                <div class="footer-col">
+                    <h4>Legal</h4>
+                    <a href="#">Privacy Policy</a>
+                    <a href="#">Terms of Service</a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Jira Sync. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <!-- Account Modal -->
+    <div id="accountModal" class="modal" style="display: none;">
+        <div class="modal-backdrop" onclick="closeAccountModal()"></div>
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeAccountModal()">
+                <i data-lucide="x" style="width: 20px; height: 20px;"></i>
+            </button>
+            <div id="accountContent">
+                <!-- Dynamic content injected by JS -->
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .modal {
+            position: fixed;
+            inset: 0;
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            position: relative;
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 2rem;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .modal-close:hover {
+            color: var(--text);
+        }
+
+        .account-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            margin: 0 auto 1rem;
+            border: 3px solid var(--accent);
+        }
+
+        .license-card {
+            background: rgba(101, 84, 192, 0.1);
+            border: 1px solid rgba(101, 84, 192, 0.3);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .license-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            font-size: 0.9rem;
+        }
+
+        .license-row span:first-child {
+            color: var(--text-muted);
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: rgba(54, 179, 126, 0.2);
+            color: #34d399;
+        }
+
+        .status-free {
+            background: rgba(156, 163, 175, 0.2);
+            color: #9ca3af;
+        }
+
+        .btn-google {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            width: 100%;
+            padding: 0.875rem;
+            background: white;
+            color: #333;
+            border: none;
+            border-radius: 88px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-google:hover {
+            background: #f3f4f6;
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        .nav-user {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .nav-user:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+        }
+
+        .loading-spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 2rem auto;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+
+    <!-- Cloudflare Worker API Integration -->
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Cloudflare Worker URL - UPDATE WITH YOUR WORKER URL
+        const WORKER_URL = "https://jira-proxy.araza.workers.dev";
+
+        let currentUser = null; // In a full implementation, you'd use a JWT or session cookie
+        let licenseData = null;
+
+        // For now, we'll simulate the "User" state or provide a way to enter email for checking
+        // Since we removed Firebase Auth, we could use a simple email input for the demo
+
+        function updateNavUI() {
+            const navLinks = document.querySelector('.nav-links');
+            const existingUser = navLinks.querySelector('.nav-user');
+            const existingBtn = navLinks.querySelector('.btn-primary');
+
+            if (currentUser) {
+                if (existingBtn) existingBtn.style.display = 'none';
+                if (!existingUser) {
+                    const userEl = document.createElement('div');
+                    userEl.className = 'nav-user';
+                    userEl.onclick = openAccountModal;
+                    userEl.innerHTML = `
+                        <div class="nav-avatar" style="background: var(--accent); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; border-radius: 50%; width: 32px; height: 32px;">
+                            ${currentUser.email.charAt(0).toUpperCase()}
+                        </div>
+                        <span style="font-size: 0.9rem; margin-left: 8px;">Account</span>
+                    `;
+                    navLinks.appendChild(userEl);
+                }
+            } else {
+                if (existingUser) existingUser.remove();
+                if (existingBtn) existingBtn.style.display = 'inline-flex';
+            }
+        }
+
+        async function mockSignIn() {
+            const email = prompt("Enter your email to check license (Demo):", "user@example.com");
+            if (email) {
+                currentUser = { email: email };
+                updateNavUI();
+                await fetchLicenseInfo();
+                openAccountModal();
+            }
+        }
+
+        async function signOut() {
+            currentUser = null;
+            licenseData = null;
+            updateNavUI();
+            closeAccountModal();
+        }
+
+        async function fetchLicenseInfo() {
+            if (!currentUser) return;
+            try {
+                const res = await fetch(`${WORKER_URL}/api/license/check`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: currentUser.email })
+                });
+                licenseData = await res.json();
+            } catch (err) {
+                console.error('License fetch error:', err);
+                licenseData = { allowed: false, plan: 'free' };
+            }
+        }
+
+        function openAccountModal() {
+            const modal = document.getElementById('accountModal');
+            modal.style.display = 'flex';
+            renderAccountContent();
+        }
+
+        function closeAccountModal() {
+            document.getElementById('accountModal').style.display = 'none';
+        }
+
+        function renderAccountContent() {
+            const container = document.getElementById('accountContent');
+
+            if (!currentUser) {
+                container.innerHTML = `
+                    <div class="account-header">
+                        <i data-lucide="user-circle" style="width: 64px; height: 64px; color: var(--text-muted); margin-bottom: 1rem;"></i>
+                        <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Check License</h2>
+                        <p style="color: var(--text-muted); font-size: 0.9rem;">View your current license status</p>
+                    </div>
+                    <button class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="mockSignIn()">
+                        Submit Email
+                    </button>
+                `;
+            } else if (!licenseData) {
+                container.innerHTML = '<div class="loading-spinner"></div>';
+            } else {
+                const isPro = licenseData.allowed && licenseData.plan !== 'free';
+                container.innerHTML = `
+                    <div class="account-header">
+                        <div class="avatar" style="background: var(--gradient-2); display: flex; align-items: center; justify-content: center; color: white; font-size: 24px; font-weight: bold; width: 64px; height: 64px; margin: 0 auto 1rem; border-radius: 50%;">
+                             ${currentUser.email.charAt(0).toUpperCase()}
+                        </div>
+                        <h2 style="font-size: 1.25rem; margin-bottom: 0.25rem;">User Account</h2>
+                        <p style="color: var(--text-muted); font-size: 0.85rem;">${currentUser.email}</p>
+                    </div>
+                    
+                    <div class="license-card">
+                        <div class="license-row">
+                            <span>Plan</span>
+                            <span class="status-badge ${isPro ? 'status-active' : 'status-free'}">${licenseData.plan?.toUpperCase() || 'FREE'}</span>
+                        </div>
+                        ${licenseData.status ? `
+                        <div class="license-row">
+                            <span>Status</span>
+                            <span>${licenseData.status.charAt(0).toUpperCase() + licenseData.status.slice(1)}</span>
+                        </div>` : ''}
+                    </div>
+                    
+                    ${isPro ? `
+                        <button class="btn btn-outline" style="width: 100%; justify-content: center; margin-bottom: 0.75rem;" onclick="alert('Stripe Portal ready. Setup your Stripe keys in the Worker.')">
+                            <i data-lucide="settings" style="width: 16px; height: 16px;"></i>
+                            Manage Subscription
+                        </button>
+                    ` : `
+                        <a href="#pricing" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 0.75rem;" onclick="closeAccountModal()">
+                            <i data-lucide="zap" style="width: 16px; height: 16px;"></i>
+                            Upgrade to Pro
+                        </a>
+                    `}
+                    
+                    <button class="btn btn-danger" style="width: 100%; justify-content: center;" onclick="signOut()">
+                        Sign Out
+                    </button>
+                `;
+            }
+            lucide.createIcons();
+        }
+
+        // Handle "Install Free" buttons
+        document.querySelectorAll('a.btn-primary').forEach(btn => {
+            if (btn.textContent.includes('Install')) {
+                btn.addEventListener('click', e => {
+                    e.preventDefault();
+                    window.open('https://workspace.google.com/marketplace', '_blank');
+                });
+            }
+        });
+    </script>
+</body>
+
+</html>

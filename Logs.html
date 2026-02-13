@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <base target="_top">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            padding: 12px;
+            margin: 0;
+            background: #ffffff;
+            /* Cleaner white background */
+            color: #374151;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f3f4f6;
+        }
+
+        h2 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        button {
+            cursor: pointer;
+            border: 1px solid #d1d5db;
+            background: white;
+            color: #374151;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background-color: #f9fafb;
+            border-color: #9ca3af;
+        }
+
+        button.primary {
+            background-color: #eff6ff;
+            color: #1d4ed8;
+            border-color: #bfdbfe;
+        }
+
+        button.primary:hover {
+            background-color: #dbeafe;
+        }
+
+        .log-container {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .log-entry {
+            padding: 12px 0;
+            border-bottom: 1px dotted #d1d5db;
+            /* Dotted separator */
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-meta {
+            font-size: 11px;
+            color: #6b7280;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-badge {
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 10px;
+        }
+
+        .status-ok {
+            color: #059669;
+        }
+
+        .status-error {
+            color: #dc2626;
+        }
+
+        .log-message {
+            font-size: 13px;
+            line-height: 1.5;
+            color: #1f2937;
+            white-space: pre-wrap;
+            /* Preserve text formatting */
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            /* Monospace for logs */
+        }
+
+        .sheet-tag {
+            background: #f3f4f6;
+            padding: 1px 6px;
+            border-radius: 4px;
+            color: #4b5563;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #9ca3af;
+            padding: 40px;
+            font-style: italic;
+            border: 1px dashed #e5e7eb;
+            border-radius: 6px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h2>Activity Logs</h2>
+        <div class="btn-group">
+            <button onclick="clearLogs()" title="Clear all logs">Clear</button>
+            <button class="primary" onclick="loadLogs()">Refresh</button>
+        </div>
+    </div>
+
+    <div id="content">Loading...</div>
+
+    <script>
+        function loadLogs() {
+            const content = document.getElementById('content');
+            if (content.innerHTML === 'Loading...') {
+                // keep loading state
+            } else {
+                content.style.opacity = '0.5';
+            }
+
+            google.script.run
+                .withSuccessHandler(renderLogs)
+                .withFailureHandler(err => {
+                    content.style.opacity = '1';
+                    content.innerText = 'Error: ' + err.message;
+                })
+                .getRefreshLogs();
+        }
+
+        function clearLogs() {
+            if (!confirm('Are you sure you want to clear the logs?')) return;
+            document.getElementById('content').innerHTML = '<div style="color:#9ca3af; padding:20px; text-align:center">Clearing...</div>';
+            google.script.run
+                .withSuccessHandler(loadLogs)
+                .withFailureHandler(err => document.getElementById('content').innerText = err.message)
+                .clearRefreshLogs();
+        }
+
+        function renderLogs(logs) {
+            const content = document.getElementById('content');
+            content.style.opacity = '1';
+
+            if (!logs || logs.length === 0) {
+                content.innerHTML = '<div class="empty-state">No logs found. Info will appear here when sync tasks run.</div>';
+                return;
+            }
+
+            let html = '<div class="log-container">';
+            logs.slice().reverse().forEach(log => { // Show newest first
+                const date = new Date(log.timestamp);
+                const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                const isOk = log.status === 'OK';
+                const statusClass = isOk ? 'status-ok' : 'status-error';
+                const sheetName = (log.sheetName && log.sheetName !== 'false') ? log.sheetName : null;
+                const details = (log.details && log.details !== 'false') ? log.details : '';
+
+                html += `
+                    <div class="log-entry">
+                        <div class="log-meta">
+                            <span>${dateStr} ${timeStr}</span>
+                            <span class="status-badge ${statusClass}">${log.status}</span>
+                            ${sheetName ? `<span class="sheet-tag">${sheetName}</span>` : ''}
+                        </div>
+                        <div class="log-message">${details || 'No details provided'}</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            content.innerHTML = html;
+        }
+
+        // Initial load
+        window.onload = loadLogs;
+    </script>
+</body>
+
+</html>

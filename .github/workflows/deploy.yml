@@ -1,0 +1,51 @@
+name: Deploy to Google Apps Script
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_type:
+        description: 'Deployment type'
+        required: true
+        default: 'push'
+        type: choice
+        options:
+          - push
+          - deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Authenticate with Google
+        env:
+          CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+        run: |
+          echo "$CLASP_CREDENTIALS" > ~/.clasprc.json
+
+      - name: Push to Apps Script
+        run: clasp push --force
+
+      - name: Create new version (on manual deploy)
+        if: github.event.inputs.deploy_type == 'deploy'
+        run: |
+          VERSION_DESC="Automated deployment from GitHub Actions - $(date +'%Y-%m-%d %H:%M:%S')"
+          clasp version "$VERSION_DESC"
+
+      - name: Deploy as Add-on (on manual deploy)
+        if: github.event.inputs.deploy_type == 'deploy'
+        run: |
+          clasp deploy --description "Production deployment - $(date +'%Y-%m-%d')"

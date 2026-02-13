@@ -1,0 +1,10 @@
+{
+    "scriptId": "YOUR_SCRIPT_ID_HERE",
+    "rootDir": ".",
+    "fileExtension": "js",
+    "filePushOrder": [
+        "Code.js",
+        "Sidebar.html",
+        "Logs.html"
+    ]
+}

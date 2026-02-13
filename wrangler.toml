@@ -1,0 +1,16 @@
+name = "jira-proxy"
+main = "cloudflare_worker.js"
+compatibility_date = "2024-03-25"
+
+[vars]
+# Add non-sensitive variables here
+# PROXY_SECRET should be added as a secret via command line:
+# npx wrangler secret put PROXY_SECRET
+
+[[kv_namespaces]]
+binding = "LICENSES"
+id = "614f5cf3ffc24382967a2dcb02f4aee2"
+
+[[kv_namespaces]]
+binding = "ASSETS"
+id = "d99a0245e7fc489a86c311c27dc3b98b"

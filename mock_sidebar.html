@@ -1,0 +1,1972 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <script>
+        /* Mock google.script.run for UI testing */
+        window.google = window.google || {};
+        window.google.script = {
+            run: {
+                withSuccessHandler: function (onSuccess) {
+                    return {
+                        withFailureHandler: function (onFailure) {
+                            return {
+                                loadConfig: function () {
+                                    console.log('Mock: loadConfig called');
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess({
+                                            domain: 'jira.demo-project.com',
+                                            email: 'user@example.com',
+                                            token: '••••••••••••••',
+                                            jql: 'project = PROJ AND status != Done ORDER BY updated DESC',
+                                            columns: 'key, summary, status, assignee, priority'
+                                        });
+                                    }, 500);
+                                },
+                                getPingInfo: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess({ sheetId: 123 });
+                                    }, 1000);
+                                },
+                                getCapacityData: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess({
+                                            users: [
+                                                { name: 'Alice Dev', capacity: 40, assigned: 32 },
+                                                { name: 'Bob Design', capacity: 40, assigned: 18 },
+                                                { name: 'Charlie PM', capacity: 20, assigned: 5 }
+                                            ],
+                                            sprints: ['Sprint 24', 'Sprint 25']
+                                        });
+                                    }, 500);
+                                },
+                                loadDashData: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess([]);
+                                    }, 500);
+                                },
+                                getJiraFields: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess([
+                                            { id: 'key', name: 'Key' },
+                                            { id: 'summary', name: 'Summary' },
+                                            { id: 'status', name: 'Status' },
+                                            { id: 'priority', name: 'Priority' },
+                                            { id: 'assignee', name: 'Assignee' },
+                                            { id: 'issuetype', name: 'Issue Type' }
+                                        ]);
+                                    }, 600);
+                                },
+                                validateJql: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess({ valid: true, count: 128, error: null });
+                                    }, 800);
+                                },
+                                getJiraFilters: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess([
+                                            { id: '10001', name: 'My Open Issues' },
+                                            { id: '10002', name: 'High Priority Bugs' },
+                                            { id: '10003', name: 'Ready for QA' }
+                                        ]);
+                                    }, 600);
+                                },
+                                getJiraProjects: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess([
+                                            { key: 'PROJ', name: 'Project Alpha' },
+                                            { key: 'WEB', name: 'Website Redesign' },
+                                            { key: 'MOB', name: 'Mobile App' }
+                                        ]);
+                                    }, 600);
+                                },
+                                getSheetHeaders: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess(['Key', 'Summary', 'Status', 'Priority', 'Assignee', 'Story Points', 'Created', 'Due Date']);
+                                    }, 400);
+                                },
+                                getLicenseInfo: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess({
+                                            email: 'user@example.com',
+                                            plan: 'free',
+                                            allowed: true,
+                                            status: 'active',
+                                            seats: 1,
+                                            usedSeats: 1
+                                        });
+                                    }, 500);
+                                },
+                                getPricingInfo: function () {
+                                    setTimeout(() => {
+                                        if (onSuccess) onSuccess({
+                                            individual: {
+                                                monthly: { price: '$9.99', priceId: 'price_123' },
+                                                yearly: { price: '$99', priceId: 'price_456' },
+                                                features: ['Unlimited Issues', 'Auto-sync', 'Priority Support']
+                                            },
+                                            domain: {
+                                                monthly: { price: '$49', priceId: 'price_789' },
+                                                yearly: { price: '$490', priceId: 'price_012' },
+                                                features: ['Unlimited Users', 'Domain License', 'SSO']
+                                            }
+                                        });
+                                    }, 500);
+                                }
+                            };
+                        }
+                    };
+                }
+            }
+        };
+    </script>
+    <base target="_top">
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        border: "hsl(var(--border))",
+                        input: "hsl(var(--input))",
+                        ring: "hsl(var(--ring))",
+                        background: "hsl(var(--background))",
+                        foreground: "hsl(var(--foreground))",
+                        primary: {
+                            DEFAULT: "hsl(var(--primary))",
+                            foreground: "hsl(var(--primary-foreground))",
+                        },
+                        secondary: {
+                            DEFAULT: "hsl(var(--secondary))",
+                            foreground: "hsl(var(--secondary-foreground))",
+                        },
+                        destructive: {
+                            DEFAULT: "hsl(var(--destructive))",
+                            foreground: "hsl(var(--destructive-foreground))",
+                        },
+                        muted: {
+                            DEFAULT: "hsl(var(--muted))",
+                            foreground: "hsl(var(--muted-foreground))",
+                        },
+                        accent: {
+                            DEFAULT: "hsl(var(--accent))",
+                            foreground: "hsl(var(--accent-foreground))",
+                        },
+                        card: {
+                            DEFAULT: "hsl(var(--card))",
+                            foreground: "hsl(var(--card-foreground))",
+                        },
+                    },
+                    borderRadius: {
+                        lg: `var(--radius)`,
+                        md: `calc(var(--radius) - 2px)`,
+                        sm: "calc(var(--radius) - 4px)",
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        @layer base {
+            :root {
+                --background: 0 0% 100%;
+                --foreground: 240 10% 3.9%;
+                --card: 0 0% 100%;
+                --card-foreground: 240 10% 3.9%;
+                --primary: 240 5.9% 10%;
+                --primary-foreground: 0 0% 98%;
+                --secondary: 240 4.8% 95.9%;
+                --secondary-foreground: 240 5.9% 10%;
+                --muted: 240 4.8% 95.9%;
+                --muted-foreground: 240 3.8% 46.1%;
+                --accent: 240 4.8% 95.9%;
+                --accent-foreground: 240 5.9% 10%;
+                --destructive: 0 84.2% 60.2%;
+                --destructive-foreground: 0 0% 98%;
+                --border: 240 5.9% 90%;
+                --input: 240 5.9% 90%;
+                --ring: 240 5.9% 10%;
+                --radius: 0.5rem;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        /* Custom scrollbar for better look in Sidebar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        button.ghost:active {
+            background: transparent;
+        }
+
+        @keyframes flash {
+            0% {
+                opacity: 0.5;
+                transform: scale(0.98);
+            }
+
+            50% {
+                opacity: 1;
+                transform: scale(1.02);
+            }
+
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .animate-flash {
+            animation: flash 0.3s ease-in-out;
+        }
+    </style>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #f9fbfd;
+        }
+
+        #bg-mock {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: calc(100% - 350px);
+            height: 100%;
+            background-image: url('sheets_grid_clean.png');
+            background-size: cover;
+            background-position: top left;
+        }
+
+        #root {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 350px;
+            height: 100%;
+            background: white;
+            border-left: 1px solid #e0e0e0;
+            box-shadow: -2px 0 10px rgba(0, 0, 0, 0.05);
+            overflow-y: auto;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+
+<body class="bg-background text-foreground p-4">
+    <div id="bg-mock"></div>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        // Injected from Apps Script Template
+        const INITIAL_MODE = window.INITIAL_MODE || 'config';
+
+        /* --- COMPONENTS --- */
+        const cn = (...classes) => classes.filter(Boolean).join(' ');
+
+        const Button = ({ className, variant = "default", size = "default", children, ...props }) => {
+            const variants = {
+                default: "bg-primary text-primary-foreground hover:bg-primary/90",
+                destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+                outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+                secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-input",
+                ghost: "hover:bg-accent hover:text-accent-foreground",
+            };
+            const sizes = {
+                default: "h-9 px-4 py-2",
+                sm: "h-8 rounded-md px-3 text-xs",
+                lg: "h-10 rounded-md px-8",
+                icon: "h-9 w-9",
+            };
+            return (
+                <button
+                    className={cn(
+                        "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                        variants[variant],
+                        sizes[size],
+                        className
+                    )}
+                    {...props}
+                >
+                    {children}
+                </button>
+            );
+        };
+
+        const Input = ({ className, ...props }) => (
+            <input className={cn("flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50", className)} {...props} />
+        );
+
+        const Textarea = ({ className, ...props }) => (
+            <textarea className={cn("flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50", className)} {...props} />
+        );
+
+        const Label = ({ className, children, ...props }) => (
+            <label className={cn("text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70", className)} {...props}>
+                {children}
+            </label>
+        );
+
+        const Tabs = ({ value, onValueChange, children }) => (
+            <div className="w-full">{children}</div>
+        );
+
+        const TabsList = ({ children }) => (
+            <div className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground w-full mb-4">
+                {children}
+            </div>
+        );
+
+        const TabsTrigger = ({ value, currentValue, onClick, children }) => (
+            <button
+                onClick={() => onClick(value)}
+                className={cn(
+                    "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 flex-1",
+                    currentValue === value ? "bg-background text-foreground shadow" : "hover:bg-background/50"
+                )}
+            >
+                {children}
+            </button>
+        );
+
+
+
+        const Alert = ({ type, children, className }) => {
+            const styles = {
+                error: "bg-red-50 text-red-900 border-red-200",
+                success: "bg-green-50 text-green-900 border-green-200",
+                info: "bg-blue-50 text-blue-900 border-blue-200"
+            };
+            return (
+                <div className={cn("p-3 rounded-md text-xs border", styles[type], className)}>
+                    {children}
+                </div>
+            )
+        };
+
+        const Tooltip = ({ text, children }) => {
+            const [visible, setVisible] = useState(false);
+            return (
+                <div className="relative flex items-center" onMouseEnter={() => setVisible(true)} onMouseLeave={() => setVisible(false)}>
+                    {children}
+                    {visible && (
+                        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-black text-white text-[10px] rounded whitespace-nowrap z-50">
+                            {text}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // LICENSE PANEL COMPONENT
+        const LicensePanel = ({ setStatus }) => {
+            const [license, setLicense] = useState(null);
+            const [pricing, setPricing] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [purchaseType, setPurchaseType] = useState('individual');
+            const [domainInput, setDomainInput] = useState('');
+            const [seatsInput, setSeatsInput] = useState(10);
+            const [billingCycle, setBillingCycle] = useState('yearly');
+
+            useEffect(() => {
+                loadLicenseInfo();
+                loadPricing();
+            }, []);
+
+            const loadLicenseInfo = () => {
+                setLoading(true);
+                google.script.run
+                    .withSuccessHandler((data) => {
+                        setLicense(data);
+                        // Pre-fill domain from email
+                        if (data.email) {
+                            const emailDomain = data.email.split('@')[1];
+                            setDomainInput(emailDomain || '');
+                        }
+                        setLoading(false);
+                    })
+                    .withFailureHandler((err) => {
+                        setStatus({ type: 'error', text: 'Failed to load license info' });
+                        setLoading(false);
+                    })
+                    .getLicenseInfo();
+            };
+
+            const loadPricing = () => {
+                google.script.run
+                    .withSuccessHandler(setPricing)
+                    .withFailureHandler(() => { })
+                    .getPricingInfo();
+            };
+
+            const handleUpgrade = () => {
+                const selectedPricing = purchaseType === 'domain' ? pricing?.domain : pricing?.individual;
+                const priceId = billingCycle === 'yearly'
+                    ? selectedPricing?.yearly?.priceId
+                    : selectedPricing?.monthly?.priceId;
+
+                if (!priceId) {
+                    setStatus({ type: 'error', text: 'Pricing not loaded. Please try again.' });
+                    return;
+                }
+
+                setStatus({ type: 'info', text: 'Creating checkout session...' });
+
+                google.script.run
+                    .withSuccessHandler((result) => {
+                        if (result.url) {
+                            window.open(result.url, '_blank');
+                            setStatus({ type: 'success', text: 'Checkout opened in new tab' });
+                        } else {
+                            setStatus({ type: 'error', text: 'Failed to create checkout' });
+                        }
+                    })
+                    .withFailureHandler((err) => {
+                        setStatus({ type: 'error', text: err.message });
+                    })
+                    .createCheckoutSession(
+                        priceId,
+                        purchaseType,
+                        purchaseType === 'domain' ? domainInput : null,
+                        purchaseType === 'domain' ? seatsInput : null
+                    );
+            };
+
+            const handleManageSubscription = () => {
+                setStatus({ type: 'info', text: 'Opening subscription portal...' });
+                google.script.run
+                    .withSuccessHandler((result) => {
+                        if (result.url) {
+                            window.open(result.url, '_blank');
+                            setStatus({ type: 'success', text: 'Portal opened in new tab' });
+                        }
+                    })
+                    .withFailureHandler((err) => {
+                        setStatus({ type: 'error', text: err.message });
+                    })
+                    .createManageSubscriptionSession();
+            };
+
+            if (loading) {
+                return (
+                    <div className="flex items-center justify-center py-12">
+                        <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full"></div>
+                    </div>
+                );
+            }
+
+            const isPro = license?.allowed && license?.plan !== 'free';
+
+            return (
+                <div className="bg-background min-h-screen text-foreground selection:bg-primary/20 flex flex-col font-sans text-sm">
+                    {/* HIDDEN MOCK CONTROLS FOR SCREENSHOTS */}
+                    <div style={{ position: 'fixed', bottom: 0, right: 0, opacity: 0, zIndex: 9999, pointerEvents: 'auto' }}>
+                        <button id="btn-bulk" onClick={() => {
+                            setActiveTab('issues');
+                            setStatus({ type: 'info', text: 'Creating 12 issues from selection (A2:F14)...' });
+                        }}>Bulk</button>
+                        <button id="btn-cols" onClick={() => { setShowColumnModal(true); }}>Cols</button>
+                        <button id="btn-filter" onClick={() => { setActiveTab('issues'); updateConfig('jql', 'filter=10001'); }}>Filter</button>
+                        <button id="btn-refresh" onClick={() => {
+                            setActiveTab('issues');
+                            setTimeout(() => document.getElementById('refresh-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
+                        }}>Refresh</button>
+                        <button id="btn-reset" onClick={() => { setStatus(null); setShowColumnModal(false); }}>Reset</button>
+                    </div>
+
+                    {/* Header */}
+                    <div className="text-center py-4">
+                        <i data-lucide={isPro ? "crown" : "key"} className={cn("w-12 h-12 mx-auto mb-2", isPro ? "text-yellow-500" : "text-muted-foreground")}></i>
+                        <h2 className="text-lg font-bold">License Information</h2>
+                        <p className="text-sm text-muted-foreground">Manage your subscription</p>
+                    </div>
+
+                    {/* Current License Status */}
+                    <div className={cn(
+                        "p-4 rounded-lg border-2",
+                        isPro ? "border-yellow-400 bg-yellow-50" : "border-gray-200 bg-gray-50"
+                    )}>
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-medium text-muted-foreground uppercase">Current Plan</span>
+                            <span className={cn(
+                                "px-2 py-1 rounded text-xs font-bold uppercase",
+                                isPro ? "bg-yellow-400 text-yellow-900" : "bg-gray-200 text-gray-600"
+                            )}>
+                                {license?.plan || 'Free'}
+                            </span>
+                        </div>
+
+                        <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Email:</span>
+                                <span className="font-medium truncate ml-2">{license?.email || 'Unknown'}</span>
+                            </div>
+
+                            {license?.licenseType === 'domain' && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">License Type:</span>
+                                    <span className="font-medium">Domain ({license.domain})</span>
+                                </div>
+                            )}
+
+                            {license?.status && license.status !== 'none' && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Status:</span>
+                                    <span className={cn(
+                                        "font-medium",
+                                        license.status === 'active' ? "text-green-600" :
+                                            license.status === 'trialing' ? "text-blue-600" : "text-red-600"
+                                    )}>
+                                        {license.status.charAt(0).toUpperCase() + license.status.slice(1)}
+                                    </span>
+                                </div>
+                            )}
+
+                            {license?.expiresAt && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Renews:</span>
+                                    <span className="font-medium">{new Date(license.expiresAt).toLocaleDateString()}</span>
+                                </div>
+                            )}
+
+                            {license?.seats && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Seats:</span>
+                                    <span className="font-medium">{license.usedSeats || 0} / {license.seats}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Features List */}
+                        {isPro && license?.features?.length > 0 && (
+                            <div className="mt-3 pt-3 border-t">
+                                <p className="text-xs font-medium text-muted-foreground mb-2">Included Features:</p>
+                                <div className="flex flex-wrap gap-1">
+                                    {license.features.map((f, i) => (
+                                        <span key={i} className="px-2 py-0.5 bg-white rounded text-xs border">
+                                            {f.replace(/_/g, ' ')}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Pro Actions */}
+                    {isPro ? (
+                        <div className="space-y-2">
+                            <Button className="w-full" variant="outline" onClick={handleManageSubscription}>
+                                <i data-lucide="settings" className="w-4 h-4 mr-2"></i>
+                                Manage Subscription
+                            </Button>
+                            <Button className="w-full" variant="ghost" size="sm" onClick={loadLicenseInfo}>
+                                <i data-lucide="refresh-cw" className="w-4 h-4 mr-2"></i>
+                                Refresh Status
+                            </Button>
+                        </div>
+                    ) : (
+                        /* Upgrade Section */
+                        <div className="space-y-4">
+                            <div className="text-center">
+                                <h3 className="font-bold text-lg">Upgrade to Pro</h3>
+                                <p className="text-sm text-muted-foreground">Unlock all features</p>
+                            </div>
+
+                            {/* Purchase Type Toggle */}
+                            <div className="flex rounded-lg bg-muted p-1">
+                                <button
+                                    onClick={() => setPurchaseType('individual')}
+                                    className={cn(
+                                        "flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all",
+                                        purchaseType === 'individual' ? "bg-background shadow" : "hover:bg-background/50"
+                                    )}
+                                >
+                                    Individual
+                                </button>
+                                <button
+                                    onClick={() => setPurchaseType('domain')}
+                                    className={cn(
+                                        "flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all",
+                                        purchaseType === 'domain' ? "bg-background shadow" : "hover:bg-background/50"
+                                    )}
+                                >
+                                    Team / Company
+                                </button>
+                            </div>
+
+                            {/* Domain Input (for company purchase) */}
+                            {purchaseType === 'domain' && (
+                                <div className="space-y-3 p-3 bg-muted rounded-lg">
+                                    <div className="space-y-1">
+                                        <Label>Company Domain</Label>
+                                        <Input
+                                            placeholder="example.com"
+                                            value={domainInput}
+                                            onChange={(e) => setDomainInput(e.target.value)}
+                                        />
+                                        <p className="text-[10px] text-muted-foreground">
+                                            All users with @{domainInput || 'your-domain.com'} emails will have access
+                                        </p>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label>Number of Seats</Label>
+                                        <Input
+                                            type="number"
+                                            min="5"
+                                            value={seatsInput}
+                                            onChange={(e) => setSeatsInput(parseInt(e.target.value) || 10)}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Billing Cycle Toggle */}
+                            <div className="flex rounded-lg bg-muted p-1">
+                                <button
+                                    onClick={() => setBillingCycle('monthly')}
+                                    className={cn(
+                                        "flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all",
+                                        billingCycle === 'monthly' ? "bg-background shadow" : "hover:bg-background/50"
+                                    )}
+                                >
+                                    Monthly
+                                </button>
+                                <button
+                                    onClick={() => setBillingCycle('yearly')}
+                                    className={cn(
+                                        "flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all relative",
+                                        billingCycle === 'yearly' ? "bg-background shadow" : "hover:bg-background/50"
+                                    )}
+                                >
+                                    Yearly
+                                    <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-green-500 text-white text-[10px] rounded-full">
+                                        -17%
+                                    </span>
+                                </button>
+                            </div>
+
+                            {/* Pricing Display */}
+                            {pricing && (
+                                <div className="text-center py-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg">
+                                    <div className="text-2xl font-bold">
+                                        {purchaseType === 'domain'
+                                            ? (billingCycle === 'yearly' ? pricing.domain?.yearly?.price : pricing.domain?.monthly?.price)
+                                            : (billingCycle === 'yearly' ? pricing.individual?.yearly?.price : pricing.individual?.monthly?.price)
+                                        }
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        {purchaseType === 'domain'
+                                            ? 'For your entire organization'
+                                            : 'For your account only'}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Features List */}
+                            {pricing && (
+                                <div className="space-y-2">
+                                    <p className="text-xs font-medium text-muted-foreground">What's included:</p>
+                                    <ul className="space-y-1">
+                                        {(purchaseType === 'domain' ? pricing.domain?.features : pricing.individual?.features)?.map((feature, i) => (
+                                            <li key={i} className="flex items-center text-sm">
+                                                <i data-lucide="check" className="w-4 h-4 mr-2 text-green-500"></i>
+                                                {feature}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            <Button className="w-full" onClick={handleUpgrade}>
+                                <i data-lucide="zap" className="w-4 h-4 mr-2"></i>
+                                Upgrade Now
+                            </Button>
+
+                            <p className="text-center text-xs text-muted-foreground">
+                                Secure payment via Stripe. Cancel anytime.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const ColumnSelector = ({ availableFields, currentColumns, onSave, onCancel }) => {
+            const [search, setSearch] = useState("");
+            const [selected, setSelected] = useState([]);
+
+            // Parse current columns on mount
+            useEffect(() => {
+                const cols = currentColumns.split(',').map(c => c.trim()).filter(Boolean);
+                // Map to field objects if possible, or keep as dummy objects
+                const initialSelected = cols.map(c => {
+                    const field = availableFields.find(f => f.key === c || f.name === c) || { id: c, name: c, key: c };
+                    return field;
+                });
+                setSelected(initialSelected);
+            }, [currentColumns, availableFields]);
+
+            const filteredAvailable = availableFields
+                .filter(f => f.name.toLowerCase().includes(search.toLowerCase()) || f.key.toLowerCase().includes(search.toLowerCase()));
+
+            const toggleField = (field) => {
+                const exists = selected.find(s => s.key === field.key);
+                if (exists) {
+                    setSelected(selected.filter(s => s.key !== field.key));
+                } else {
+                    setSelected([...selected, field]);
+                }
+            };
+
+            const removeField = (field) => {
+                setSelected(selected.filter(s => s.key !== field.key));
+            };
+
+            const handleSave = () => {
+                onSave(selected.map(s => s.key || s.name).join(', '));
+            };
+
+            // Mandatory fields for issue creation
+            const MANDATORY_FIELDS = ['summary', 'issuetype', 'project'];
+            const isMandatory = (field) => MANDATORY_FIELDS.includes(field.key?.toLowerCase() || field.name?.toLowerCase());
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-background w-full max-w-[350px] max-h-[600px] rounded-lg shadow-lg flex flex-col overflow-hidden">
+                        <div className="p-3 border-b font-bold flex justify-between items-center">
+                            <div>
+                                <span>Select Columns</span>
+                                <span className="text-xs font-normal text-red-500 ml-2">(* required for create)</span>
+                            </div>
+                            <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+                                <i data-lucide="x" className="w-4 h-4"></i>
+                            </button>
+                        </div>
+
+                        <div className="p-2 border-b">
+                            <Input
+                                placeholder="Search fields..."
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+
+                        <div className="flex-1 overflow-auto p-2 space-y-4">
+                            {/* Selected Tags Area */}
+                            {selected.length > 0 && (
+                                <div className="mb-2">
+                                    <h4 className="text-xs font-bold mb-2 text-muted-foreground uppercase">Selected Order ({selected.length})</h4>
+                                    <div className="flex flex-wrap gap-1">
+                                        {selected.map((f, i) => (
+                                            <span key={i} className={cn(
+                                                "inline-flex items-center px-2 py-1 rounded bg-secondary text-xs border border-input",
+                                                isMandatory(f) && "text-red-600 font-medium"
+                                            )}>
+                                                {f.name}{isMandatory(f) && ' *'}
+                                                <button onClick={() => removeField(f)} className="ml-1 text-muted-foreground hover:text-red-500">
+                                                    <i data-lucide="x" className="w-3 h-3"></i>
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* All Fields List with Checkboxes */}
+                            <div>
+                                <h4 className="text-xs font-bold mb-2 text-muted-foreground uppercase">All Fields</h4>
+                                <div className="space-y-1">
+                                    {(() => {
+                                        const mandatoryList = filteredAvailable
+                                            .filter(f => isMandatory(f))
+                                            .sort((a, b) => a.name.localeCompare(b.name));
+
+                                        const optionalList = filteredAvailable
+                                            .filter(f => !isMandatory(f))
+                                            .sort((a, b) => a.name.localeCompare(b.name));
+
+                                        const renderField = (f) => {
+                                            const isSelected = !!selected.find(s => s.key === f.key);
+                                            return (
+                                                <button
+                                                    key={f.id}
+                                                    onClick={() => toggleField(f)}
+                                                    className={cn(
+                                                        "w-full text-left text-sm p-2 rounded flex items-center gap-2 transition-colors",
+                                                        isSelected ? "bg-secondary/50" : "hover:bg-secondary"
+                                                    )}
+                                                >
+                                                    <div className={cn(
+                                                        "w-4 h-4 rounded border flex items-center justify-center transition-colors",
+                                                        isSelected ? "bg-primary border-primary text-primary-foreground" : "border-input"
+                                                    )}>
+                                                        {isSelected && <i data-lucide="check" className="w-3 h-3"></i>}
+                                                    </div>
+                                                    <span className={cn("truncate", isMandatory(f) && "text-red-600 font-medium")}>
+                                                        {f.name}{isMandatory(f) && ' *'}
+                                                    </span>
+                                                </button>
+                                            );
+                                        };
+
+                                        return (
+                                            <>
+                                                {mandatoryList.length > 0 && (
+                                                    <div className="mb-2">
+                                                        {mandatoryList.map(renderField)}
+                                                    </div>
+                                                )}
+
+                                                {mandatoryList.length > 0 && optionalList.length > 0 && (
+                                                    <div className="border-t my-2 border-border/50"></div>
+                                                )}
+
+                                                {optionalList.length > 0 && (
+                                                    <div>
+                                                        {optionalList.map(renderField)}
+                                                    </div>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                    {filteredAvailable.length === 0 && <p className="text-xs text-muted-foreground italic">No matches found</p>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-3 border-t flex justify-end space-x-2">
+                            <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+                            <Button size="sm" variant="secondary" onClick={handleSave}>Save Columns</Button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        /* --- APP LOGIC --- */
+
+        const SYSTEM_FILTERS = [
+            { name: "My Open Issues", jql: "assignee = currentUser() AND resolution = Unresolved order by updated DESC" },
+            { name: "Reported by Me", jql: "reporter = currentUser() order by created DESC" },
+            { name: "Viewed Recently", jql: "issue in issueHistory() order by lastViewed DESC" },
+            { name: "All Issues", jql: "order by created DESC" },
+            { name: "Open Issues", jql: "resolution = Unresolved order by created DESC" },
+            { name: "Done Issues", jql: "statusCategory = Done order by updated DESC" },
+            { name: "Created Recently", jql: "created >= -1w order by created DESC" },
+            { name: "Created in Last 2 Years", jql: "created >= -730d order by created DESC" },
+            { name: "Updated Recently", jql: "updated >= -1w order by updated DESC" },
+            { name: "Resolved Recently", jql: "resolutiondate >= -1w order by resolutiondate DESC" }
+        ];
+
+        const App = ({ initialTab }) => {
+            // State
+            const [activeTab, setActiveTab] = useState(initialTab || INITIAL_MODE || 'config');
+            const [config, setConfig] = useState({
+                domain: '', email: '', token: '',
+                jql: 'assignee = currentUser() AND resolution = Unresolved order by updated DESC', // My Open Issues
+                columns: 'key, summary, status, priority, assignee',
+                interval: 10
+            });
+
+            // Status
+            const [status, setStatus] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [connectionTest, setConnectionTest] = useState(null);
+
+            // JQL Logic
+            const [jqlStats, setJqlStats] = useState({ count: 0, valid: true, error: null, checking: false });
+            const [filters, setFilters] = useState([]);
+            const [projects, setProjects] = useState([]);
+
+            // UX State
+            const [showColumnModal, setShowColumnModal] = useState(false);
+            const [availableFields, setAvailableFields] = useState([]);
+            const [dashboardType, setDashboardType] = useState('pie');
+            const [dashboardColumns, setDashboardColumns] = useState(['status', 'issuetype', 'priority', 'assignee']);
+            const [sheetHeaders, setSheetHeaders] = useState([]);
+            const [showToken, setShowToken] = useState(false);
+
+            // Scheduled Refresh / Interval
+            const [refreshMode, setRefreshMode] = useState('interval'); // 'interval' or 'scheduled'
+
+            // Interval Mode State
+            const [intervalSeconds, setIntervalSeconds] = useState(30);
+            const [isIntervalRunning, setIsIntervalRunning] = useState(false);
+
+            const [isRefreshing, setIsRefreshing] = useState(false);
+            const fetchRef = useRef(null);
+            const [countdown, setCountdown] = useState(0);
+            const [showRefreshBlink, setShowRefreshBlink] = useState(false);
+
+            // Capacity Planning
+            const [capacityConfig, setCapacityConfig] = useState({
+                estimationType: 'storypoints', // 'storypoints' or 'hours'
+                hoursPerPoint: 8,
+                hoursPerWeek: 40,
+                capacityPercent: 80,
+                holidays: '',
+                weeksAhead: 8
+            });
+
+            // Sheet Polling State
+            const [currentSheetId, setCurrentSheetId] = useState(null);
+
+            // Load Config on Mount & Poll for Sheet Changes
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+                loadConfiguration();
+
+                // Poll for sheet details
+                const timer = setInterval(() => {
+                    google.script.run
+                        .withSuccessHandler(info => {
+                            // Check if sheet name is available and ID changed
+                            if (info && info.sheetId) {
+                                setCurrentSheetId(prevId => {
+                                    if (prevId !== null && prevId !== info.sheetId) {
+                                        // Sheet ID changed, reload config
+                                        // We call loadConfiguration() via a timeout or directly? 
+                                        // Direct call acts on current closure. 
+                                        // Note: loadConfiguration might rely on state, but here it just calls backend.
+                                        setTimeout(loadConfiguration, 0);
+                                        return info.sheetId;
+                                    }
+                                    return prevId || info.sheetId;
+                                });
+                            }
+                        })
+                        .withFailureHandler(() => { })
+                        .getPingInfo();
+                }, 2000);
+                return () => clearInterval(timer);
+            }, []); // Run on mount (timer manages itself)
+
+            const loadConfiguration = () => {
+                setLoading(true);
+                // Reset Refresh State
+                setRefreshMode('interval');
+                setIsIntervalRunning(false);
+
+                google.script.run
+                    .withSuccessHandler((saved) => {
+                        if (saved) {
+                            // Clear old/known default JQL values so we use the new default
+                            const oldDefaults = [
+                                'order by created DESC',
+                                'created >= -730d order by created DESC',
+                                'created >= -1y ORDER BY created DESC',
+                                'assignee = currentUser() AND resolution = Unresolved order by updated DESC'
+                            ];
+                            if (oldDefaults.includes(saved.jql)) {
+                                delete saved.jql;
+                            }
+
+                            setConfig(prev => ({
+                                ...prev,
+                                domain: saved.domain || prev.domain,
+                                email: saved.email || prev.email,
+                                token: saved.token || prev.token,
+                                jql: saved.jql || 'assignee = currentUser() AND resolution = Unresolved order by updated DESC',
+                                columns: saved.columns || 'key, summary, status, priority, assignee'
+                            }));
+
+
+                        }
+                        setLoading(false);
+                    })
+                    .withFailureHandler(err => {
+                        setStatus({ type: 'error', text: 'Load failed: ' + err.message });
+                        setLoading(false);
+                    })
+                    .loadConfig();
+            };
+
+            // Fetch Filters & Projects when tab is issues and we have creds
+            useEffect(() => {
+                if (activeTab === 'issues' && config.token && config.domain) {
+                    google.script.run
+                        .withSuccessHandler(setFilters)
+                        .withFailureHandler(e => console.error(e))
+                        .getJiraFilters(config);
+
+                    google.script.run
+                        .withSuccessHandler(setProjects)
+                        .withFailureHandler(e => console.error(e))
+                        .getJiraProjects(config);
+                }
+            }, [activeTab, config.token, config.domain]);
+
+            // Debounced JQL Validator
+            useEffect(() => {
+                const handler = setTimeout(() => {
+                    if (activeTab === 'issues' && config.jql) {
+                        validateJql();
+                    }
+                }, 800);
+                return () => clearTimeout(handler);
+            }, [config.jql, config.domain, config.token, activeTab]);
+
+            // Load sheet headers when dashboard tab is opened
+            useEffect(() => {
+                if (activeTab === 'dashboard') {
+                    google.script.run
+                        .withSuccessHandler((headers) => {
+                            setSheetHeaders(headers || []);
+                            // Set default selections to any matching columns
+                            if (headers && headers.length > 0) {
+                                const commonCols = ['status', 'issuetype', 'priority', 'assignee', 'Status', 'Issue Type', 'Priority', 'Assignee'];
+                                const matches = headers.filter(h =>
+                                    commonCols.some(c => h.toLowerCase() === c.toLowerCase())
+                                );
+                                if (matches.length > 0 && dashboardColumns.length === 0) {
+                                    setDashboardColumns(matches);
+                                }
+                            }
+                        })
+                        .withFailureHandler(() => setSheetHeaders([]))
+                        .getSheetHeaders();
+                }
+            }, [activeTab]);
+
+            const updateConfig = (key, val) => setConfig(prev => ({ ...prev, [key]: val }));
+
+            // Handlers
+            const handleSave = () => {
+                setLoading(true);
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Configuration saved' });
+                        setLoading(false);
+                    })
+                    .withFailureHandler(err => {
+                        setStatus({ type: 'error', text: 'Save failed: ' + err.message });
+                        setLoading(false);
+                    })
+                    .saveConfig(config);
+            };
+
+            const handleTestConnection = () => {
+                setConnectionTest({ checking: true });
+                google.script.run
+                    .withSuccessHandler((res) => {
+                        setConnectionTest({ success: true, msg: res.message });
+                    })
+                    .withFailureHandler((err) => {
+                        setConnectionTest({ success: false, msg: err.message });
+                    })
+                    .testConnection(config);
+            };
+
+            const validateJql = () => {
+                setJqlStats(prev => ({ ...prev, checking: true }));
+                google.script.run
+                    .withSuccessHandler((res) => {
+                        setJqlStats({
+                            checking: false,
+                            valid: res.valid,
+                            count: res.count,
+                            error: res.error
+                        });
+                    })
+                    .withFailureHandler(() => {
+                        setJqlStats({ checking: false, valid: false, count: 0, error: "Validation check failed" });
+                    })
+                    .getJqlCount(config);
+            };
+
+            const handleRefresh = (trigger = 'Manual', force = false) => {
+                if (isRefreshing && !force) return;
+
+                if (!config.domain || !config.email || !config.token) {
+                    setStatus({ type: 'error', text: 'Please configure settings first.' });
+                    return;
+                }
+
+                setIsRefreshing(true);
+                setStatus({ type: 'info', text: 'Fetching data...' });
+
+                const params = { ...config, triggerType: trigger, force: force };
+
+                google.script.run
+                    .withSuccessHandler((res) => {
+                        if (res.warning) {
+                            if (confirm(`Warning: Found ${res.total} issues (> 5000).\nFetching this many issues may take a few minutes and could be restricted by Jira API limits.\n\nDo you want to continue?`)) {
+                                handleRefresh(trigger, true); // Retry with force
+                            } else {
+                                setIsRefreshing(false);
+                                setStatus({ type: 'info', text: 'Fetch cancelled.' });
+                            }
+                            return;
+                        }
+
+                        // Small pause to let user see the update
+                        setTimeout(() => setIsRefreshing(false), 3500);
+                        setStatus({
+                            type: 'success',
+                            text: `Fetched ${res.count} issues. ${res.changedCount} updated.`
+                        });
+                    })
+                    .withFailureHandler((err) => {
+                        setIsRefreshing(false);
+                        setStatus({ type: 'error', text: err.message });
+                    })
+                    .fetchJiraData(params);
+            };
+
+            const handleUpdate = () => {
+                setStatus({ type: 'info', text: 'Validating and processing...' });
+                google.script.run
+                    .withSuccessHandler((data) => {
+                        const updates = data.updates || [];
+                        const creates = data.creates || [];
+
+                        if (!updates.length && !creates.length) {
+                            // If we returned successfully but empty, maybe just nothing selected?
+                            // If validation failed, it would have thrown an error handled below.
+                            setStatus({ type: 'info', text: 'No rows to process.' });
+                            return;
+                        }
+
+                        // Process Updates
+                        if (updates.length > 0) {
+                            setStatus({ type: 'info', text: `Updating ${updates.length} issues...` });
+                            google.script.run
+                                .withSuccessHandler(res => {
+                                    setStatus({ type: 'success', text: `Updated ${res.count} issues.` });
+                                    // Refresh to show updated data
+                                    handleRefresh();
+                                })
+                                .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                                .updateJiraIssues(config, updates);
+                        }
+
+                        // Process Creates
+                        if (creates.length > 0) {
+                            setStatus({ type: 'info', text: `Creating ${creates.length} issues...` });
+                            google.script.run
+                                .withSuccessHandler(res => {
+                                    // Format success message: "Created 5 issues: 3 Bug, 2 Story"
+                                    const typeSummary = Object.entries(res.types || {})
+                                        .map(([type, count]) => `${count} ${type}`)
+                                        .join(', ');
+                                    const msg = `Created ${res.count} issues${typeSummary ? ': ' + typeSummary : ''}`;
+
+                                    setStatus({ type: 'success', text: msg });
+                                    handleRefresh();
+                                })
+                                .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                                .createJiraIssues(config, creates);
+                        }
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .getSelectedRowsData();
+            };
+
+            const handleCreate = () => {
+                if (!config.projectKey) {
+                    setStatus({ type: 'error', text: 'Please select project name' });
+                    return;
+                }
+                setStatus({ type: 'info', text: 'Checking rows to create...' });
+                google.script.run
+                    .withSuccessHandler((data) => {
+                        const creates = data.creates || [];
+
+                        if (!creates.length) {
+                            setStatus({ type: 'info', text: 'No new rows to create. Select rows without a Jira key.' });
+                            return;
+                        }
+
+                        setStatus({ type: 'info', text: `Creating ${creates.length} issues...` });
+                        google.script.run
+                            .withSuccessHandler(res => {
+                                const typeSummary = Object.entries(res.types || {})
+                                    .map(([type, count]) => `${count} ${type}`)
+                                    .join(', ');
+                                const msg = `Created ${res.count} issues${typeSummary ? ': ' + typeSummary : ''}`;
+                                setStatus({ type: 'success', text: msg });
+                                handleRefresh();
+                            })
+                            .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                            .createJiraIssues(config, creates);
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .getSelectedRowsData();
+            };
+
+            const handleResetIssues = () => {
+                if (!confirm('Reset all highlighted issues to default white?')) return;
+
+                setStatus({ type: 'info', text: 'Resetting colors...' });
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Issue colors reset' });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .resetIssueColors();
+            };
+
+            const handleGenerateDashboard = () => {
+                if (dashboardColumns.length === 0) {
+                    setStatus({ type: 'error', text: 'Please select at least one column to visualize.' });
+                    return;
+                }
+                setStatus({ type: 'info', text: 'Generating Dashboard...' });
+                google.script.run
+                    .withSuccessHandler((result) => {
+                        let msg = 'Dashboard created!';
+                        if (result.skipped && result.skipped.length > 0) {
+                            msg += ` Skipped: ${result.skipped.join(', ')} (not suitable for charts)`;
+                        }
+                        setStatus({ type: 'success', text: msg });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .generateDashboard(dashboardType, dashboardColumns);
+            };
+
+            const handleGenerateRoadmap = () => {
+                setStatus({ type: 'info', text: 'Generating Roadmap...' });
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Roadmap Created (See "Jira Roadmap" sheet)' });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .generateRoadmap();
+            };
+
+            const handleGenerateCapacity = () => {
+                setStatus({ type: 'info', text: 'Generating Capacity Plan...' });
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Capacity Plan Created (See "Jira Capacity Plan" sheet)' });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .generateCapacityPlan(capacityConfig);
+            };
+
+            const handleDeleteIssues = () => {
+                setStatus({ type: 'info', text: 'Checking selection...' });
+                google.script.run
+                    .withSuccessHandler((count) => {
+                        if (count === 0) {
+                            setStatus({ type: 'error', text: 'No issue keys found in selection.' });
+                            return;
+                        }
+
+                        if (confirm(`Are you sure you want to delete ${count} issues from Jira?\nThis action cannot be undone.`)) {
+                            setStatus({ type: 'info', text: `Deleting ${count} items...` });
+                            google.script.run
+                                .withSuccessHandler((res) => {
+                                    let msg = `Deleted: ${res.deleted}. Failed: ${res.failed}.`;
+                                    if (res.failed > 0 && res.errors.length > 0) {
+                                        msg += ` Error: ${res.errors[0]}`;
+                                    }
+                                    setStatus({
+                                        type: res.failed === 0 ? 'success' : 'warning',
+                                        text: msg
+                                    });
+                                })
+                                .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                                .deleteSelectedJiraIssues(config);
+                        } else {
+                            setStatus({ type: 'info', text: 'Deletion cancelled.' });
+                        }
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .getSelectedIssueCount(config);
+            };
+
+            const handleToggleSchedule = () => {
+                if (refreshMode === 'none') {
+                    setStatus({ type: 'info', text: 'Disabling auto-refresh...' });
+                    setIsIntervalRunning(false);
+                    google.script.run
+                        .withSuccessHandler(() => setStatus({ type: 'success', text: 'Auto-refresh disabled.' }))
+                        .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                        .disableScheduledRefresh();
+                } else {
+                    // Toggle client-side interval
+                    setIsIntervalRunning(!isIntervalRunning);
+                }
+            };
+
+            // Interval Timer Effect - Countdown based
+            useEffect(() => {
+                if (isIntervalRunning) {
+                    // Pause if refreshing
+                    if (isRefreshing) return;
+
+                    // Reset if cycle complete
+                    if (countdown <= 0) {
+                        setCountdown(intervalSeconds);
+                        return;
+                    }
+
+                    const timer = setInterval(() => {
+                        setCountdown(prev => {
+                            if (prev <= 1) {
+                                handleRefresh('Interval');
+                                return 0; // Hold at 0
+                            }
+                            return prev - 1;
+                        });
+                    }, 1000);
+                    return () => clearInterval(timer);
+                } else {
+                    setCountdown(0);
+                }
+            }, [isIntervalRunning, intervalSeconds, isRefreshing, countdown]);
+
+            // Load Fields when modal opens or standard startup
+            useEffect(() => {
+                if (activeTab === 'issues' && config.token && availableFields.length === 0) {
+                    google.script.run
+                        .withSuccessHandler(setAvailableFields)
+                        .getJiraFields(config);
+                }
+            }, [activeTab, config.token, showColumnModal]);
+
+
+
+            const sectionTitles = {
+                config: { title: 'JIRA Configuration', icon: 'settings' },
+                issues: { title: 'JIRA Issues', icon: 'list' },
+                dashboard: { title: 'Dashboard & Metrics', icon: 'pie-chart' },
+                roadmap: { title: 'Roadmap Planning', icon: 'gantt-chart' },
+                capacity: { title: 'Capacity Planning', icon: 'users' }
+            };
+
+            const currentSection = sectionTitles[activeTab] || sectionTitles.config;
+
+            return (
+                <div className="space-y-4">
+                    {/* Header */}
+                    <div className="flex items-center space-x-2 pb-2 border-b">
+                        <i data-lucide={currentSection.icon} className="h-5 w-5 text-blue-600"></i>
+                        <h1 className="text-lg font-bold tracking-tight">{currentSection.title}</h1>
+                    </div>
+
+                    {/* CONFIGURATION TAB */}
+                    {activeTab === 'config' && (
+                        <div className="space-y-4 animation-fade-in">
+
+
+
+                            <div className="space-y-2">
+                                <Label>Jira Domain</Label>
+                                <Input
+                                    placeholder="company.atlassian.net"
+                                    value={config.domain}
+                                    onChange={e => updateConfig('domain', e.target.value)}
+                                />
+                                <p className="text-[10px] text-muted-foreground">The part before .atlassian.net usually.</p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Email</Label>
+                                <Input
+                                    placeholder="user@example.com"
+                                    value={config.email}
+                                    onChange={e => updateConfig('email', e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>API Token</Label>
+                                <div style={{ position: 'relative' }}>
+                                    <Input
+                                        type={showToken ? 'text' : 'password'}
+                                        placeholder="••••••••••••"
+                                        value={config.token}
+                                        onChange={e => updateConfig('token', e.target.value)}
+                                        style={{ paddingRight: '36px' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowToken(!showToken)}
+                                        style={{
+                                            position: 'absolute',
+                                            right: '8px',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            background: 'none',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            padding: '4px',
+                                            fontSize: '14px',
+                                            color: '#6b7280'
+                                        }}
+                                        title={showToken ? 'Hide token' : 'Show token'}
+                                    >
+                                        {showToken ? '🙈' : '👁️'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="pt-2 space-y-2">
+                                <Button className="w-full" variant="secondary" onClick={handleSave} disabled={loading}>
+                                    {loading ? "Saving..." : "Save Configuration"}
+                                </Button>
+                                <Button className="w-full" variant="outline" onClick={handleTestConnection}>
+                                    Test Connection
+                                </Button>
+                            </div>
+
+                            {connectionTest && (
+                                <Alert type={connectionTest.success ? 'success' : 'error'}>
+                                    {connectionTest.checking ? "Connecting..." : connectionTest.msg}
+                                </Alert>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ISSUES TAB */}
+                    {activeTab === 'issues' && (
+                        <div className="space-y-4 animation-fade-in">
+
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                    <Label>JQL Query</Label>
+                                    {jqlStats.checking ? (
+                                        <span className="text-[10px] text-muted-foreground">Validating...</span>
+                                    ) : jqlStats.valid ? (
+                                        <span className="text-[10px] text-green-600 font-medium">
+                                            {jqlStats.count} issues match
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] text-red-600">Invalid JQL</span>
+                                    )}
+                                </div>
+                                <Textarea
+                                    className="font-mono text-xs min-h-[100px]"
+                                    placeholder="project = PROJ AND status = 'In Progress' order by created DESC"
+                                    value={config.jql}
+                                    onChange={e => updateConfig('jql', e.target.value)}
+                                />
+                                {!jqlStats.valid && jqlStats.error && (
+                                    <p className="text-[10px] text-red-500">{jqlStats.error}</p>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Standard Filters</Label>
+                                <select
+                                    className={cn(
+                                        "flex h-9 w-full rounded-md px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50",
+                                        SYSTEM_FILTERS.some(f => f.jql === config.jql)
+                                            ? "border-2 border-green-500 focus-visible:ring-green-500 bg-green-50/10"
+                                            : "border border-input focus-visible:ring-ring bg-transparent"
+                                    )}
+                                    value={config.jql}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val) {
+                                            updateConfig('jql', val);
+                                        }
+                                    }}
+                                >
+                                    <option value="">Select standard filter</option>
+                                    {SYSTEM_FILTERS.map((f, i) => (
+                                        <option key={i} value={f.jql}>{f.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Favorite Filters</Label>
+                                <select
+                                    className={cn(
+                                        "flex h-9 w-full rounded-md px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50",
+                                        config.jql.match(/^filter\s*=\s*(.+)$/)
+                                            ? "border-2 border-green-500 focus-visible:ring-green-500 bg-green-50/10"
+                                            : "border border-input focus-visible:ring-ring bg-transparent"
+                                    )}
+                                    value={(() => {
+                                        const match = config.jql.match(/^filter\s*=\s*(.+)$/);
+                                        return match ? match[1] : "";
+                                    })()}
+                                    onChange={(e) => {
+                                        if (e.target.value) {
+                                            updateConfig('jql', 'filter = ' + e.target.value);
+                                        }
+                                    }}
+                                >
+                                    <option value="">Select a favorite filter</option>
+                                    {filters.map(f => (
+                                        <option key={f.id} value={f.id}>{f.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Columns</Label>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 text-xs p-2 border rounded bg-muted/50 truncate min-h-[36px] flex items-center" title={config.columns}>
+                                        {config.columns || "No columns selected"}
+                                    </div>
+                                    <Button variant="outline" size="icon" onClick={() => setShowColumnModal(true)} title="Edit Columns">
+                                        <i data-lucide="edit-3" className="w-4 h-4"></i>
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Project (Bulk Creation)</Label>
+                                <select
+                                    className={cn(
+                                        "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+                                        !config.projectKey && "border-red-500"
+                                    )}
+                                    value={config.projectKey || ""}
+                                    onChange={(e) => updateConfig('projectKey', e.target.value)}
+                                >
+                                    <option value="" disabled>Select a project...</option>
+                                    {projects.map(p => (
+                                        <option key={p.id} value={p.key}>{p.name} ({p.key})</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="pt-2 space-y-2">
+                                <Button className="w-full text-sm" variant="secondary" onClick={handleCreate}>
+                                    <i data-lucide="plus" className="w-4 h-4 mr-2"></i>
+                                    Create
+                                </Button>
+
+                                <div className="border-t pt-2 grid grid-cols-3 gap-1">
+                                    <Button className="text-xs px-1" variant="secondary" onClick={() => handleRefresh()}>
+                                        <i data-lucide="download" className="w-3 h-3 mr-1"></i>
+                                        Fetch
+                                    </Button>
+                                    <Button className="text-xs px-1" variant="secondary" onClick={handleUpdate}>
+                                        <i data-lucide="pencil" className="w-3 h-3 mr-1"></i>
+                                        Update
+                                    </Button>
+                                    <Button className="text-xs px-1" variant="destructive" onClick={handleDeleteIssues}>
+                                        <i data-lucide="trash-2" className="w-3 h-3 mr-1"></i>
+                                        Delete
+                                    </Button>
+                                </div>
+
+                                <div className="border-t pt-2 space-y-2">
+                                    <Label>Issue Refresh Settings</Label>
+                                    <div className="flex gap-4 mb-2">
+                                        <label className="flex items-center text-sm cursor-pointer">
+                                            <input type="radio" name="refreshMode" className="mr-2"
+                                                checked={refreshMode === 'none'}
+                                                onChange={() => setRefreshMode('none')} />
+                                            None
+                                        </label>
+                                        <label className="flex items-center text-sm cursor-pointer">
+                                            <input type="radio" name="refreshMode" className="mr-2"
+                                                checked={refreshMode === 'interval'}
+                                                onChange={() => setRefreshMode('interval')} />
+                                            Interval
+                                        </label>
+                                    </div>
+
+                                    {refreshMode === 'none' ? (
+                                        <div className="space-y-2">
+                                            <p className="text-xs text-muted-foreground">Disable all automatic updates.</p>
+                                            <Button className="w-full" onClick={handleToggleSchedule} variant="secondary">
+                                                <i data-lucide="power-off" className="w-4 h-4 mr-2"></i>
+                                                Disable Auto-Refresh
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm w-16">Every</span>
+                                                <Input type="number" className="w-full text-center font-mono" min="5"
+                                                    value={isIntervalRunning ? countdown : intervalSeconds}
+                                                    onChange={(e) => setIntervalSeconds(parseInt(e.target.value) || 30)}
+                                                    disabled={isIntervalRunning}
+                                                />
+                                                <span className="text-sm w-24">seconds</span>
+                                            </div>
+                                            <Button
+                                                variant={isIntervalRunning ? "destructive" : "secondary"}
+                                                className="w-full"
+                                                onClick={handleToggleSchedule}
+                                            >
+                                                {isIntervalRunning ? (
+                                                    <><i data-lucide="pause" className="w-4 h-4 mr-2"></i>Stop Timer</>
+                                                ) : (
+                                                    <><i data-lucide="timer" className="w-4 h-4 mr-2"></i>Start Timer</>
+                                                )}
+                                            </Button>
+                                            <p className="text-[10px] text-muted-foreground">Applies only while this sidebar is open. Default: 30s.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* DASHBOARD TAB */}
+                    {activeTab === 'dashboard' && (
+                        <div className="space-y-4 animation-fade-in">
+                            <div className="text-center py-4">
+                                <i data-lucide="pie-chart" className="w-12 h-12 mx-auto text-blue-500 mb-2"></i>
+                                <h2 className="text-lg font-bold">Dashboard & Metrics</h2>
+                                <p className="text-sm text-muted-foreground">Generate visual charts from your Jira data</p>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label>Select Columns to Visualize</Label>
+                                    {sheetHeaders.length === 0 ? (
+                                        <div className="p-4 text-center text-sm text-muted-foreground border rounded-md">
+                                            <p>No columns found. Fetch Jira data first.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-1 p-2 border rounded-md bg-muted/30 max-h-[200px] overflow-y-auto">
+                                            {sheetHeaders.filter(h => h !== 'key' && h !== 'Key').map(col => (
+                                                <label key={col} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-accent/50 p-1 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={dashboardColumns.includes(col)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setDashboardColumns(prev => [...prev, col]);
+                                                            } else {
+                                                                setDashboardColumns(prev => prev.filter(c => c !== col));
+                                                            }
+                                                        }}
+                                                        className="rounded"
+                                                    />
+                                                    <span className="truncate" title={col}>{col}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <p className="text-[10px] text-muted-foreground">
+                                        Selected: {dashboardColumns.length} columns
+                                    </p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>Chart Type</Label>
+                                    <select
+                                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                                        value={dashboardType}
+                                        onChange={(e) => setDashboardType(e.target.value)}
+                                    >
+                                        <option value="pie">Pie Chart</option>
+                                        <option value="donut">Donut Chart</option>
+                                        <option value="bar">Bar Chart</option>
+                                    </select>
+                                </div>
+
+                                <Button className="w-full" variant="secondary" onClick={handleGenerateDashboard}>
+                                    <i data-lucide="pie-chart" className="w-4 h-4 mr-2"></i>
+                                    Generate Dashboard
+                                </Button>
+
+                                <Alert type="info">
+                                    Charts are rendered to the right of your data. Columns with too many unique values may be skipped.
+                                </Alert>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ROADMAP TAB */}
+                    {activeTab === 'roadmap' && (
+                        <div className="space-y-4 animation-fade-in">
+                            <div className="text-center py-4">
+                                <i data-lucide="gantt-chart" className="w-12 h-12 mx-auto text-green-500 mb-2"></i>
+                                <h2 className="text-lg font-bold">Roadmap Planning</h2>
+                                <p className="text-sm text-muted-foreground">Visualize your issues on a timeline</p>
+                            </div>
+
+                            <div className="space-y-4">
+                                <Button className="w-full" variant="secondary" onClick={handleGenerateRoadmap}>
+                                    <i data-lucide="gantt-chart" className="w-4 h-4 mr-2"></i>
+                                    Generate Roadmap
+                                </Button>
+
+                                <Alert type="info">
+                                    Creates a "Jira Roadmap" sheet with a Gantt-style timeline showing:
+                                    <ul className="list-disc ml-4 mt-1 text-xs">
+                                        <li>Issues positioned by created/due dates</li>
+                                        <li>Color-coded by status (To Do, In Progress, Done)</li>
+                                        <li>Today marker and week labels</li>
+                                    </ul>
+                                </Alert>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* CAPACITY TAB */}
+                    {activeTab === 'capacity' && (
+                        <div className="space-y-4 animation-fade-in">
+                            <div className="text-center py-4">
+                                <i data-lucide="users" className="w-12 h-12 mx-auto text-purple-500 mb-2"></i>
+                                <h2 className="text-lg font-bold">Capacity Planning</h2>
+                                <p className="text-sm text-muted-foreground">Team workload & availability analysis</p>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div className="space-y-1">
+                                    <Label>Estimation Type</Label>
+                                    <select
+                                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                                        value={capacityConfig.estimationType}
+                                        onChange={(e) => setCapacityConfig({ ...capacityConfig, estimationType: e.target.value })}
+                                    >
+                                        <option value="storypoints">Story Points</option>
+                                        <option value="hours">Hours (Time Estimate)</option>
+                                    </select>
+                                </div>
+
+                                {capacityConfig.estimationType === 'storypoints' && (
+                                    <div className="space-y-1">
+                                        <Label>Hours per Story Point</Label>
+                                        <Input
+                                            type="number"
+                                            min="1"
+                                            value={capacityConfig.hoursPerPoint}
+                                            onChange={(e) => setCapacityConfig({ ...capacityConfig, hoursPerPoint: parseInt(e.target.value) || 8 })}
+                                        />
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-1">
+                                        <Label>Hours/Week</Label>
+                                        <Input
+                                            type="number"
+                                            min="1"
+                                            max="168"
+                                            value={capacityConfig.hoursPerWeek}
+                                            onChange={(e) => setCapacityConfig({ ...capacityConfig, hoursPerWeek: parseInt(e.target.value) || 40 })}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label>Capacity %</Label>
+                                        <Input
+                                            type="number"
+                                            min="1"
+                                            max="100"
+                                            value={capacityConfig.capacityPercent}
+                                            onChange={(e) => setCapacityConfig({ ...capacityConfig, capacityPercent: parseInt(e.target.value) || 80 })}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <Label>Weeks Ahead</Label>
+                                    <Input
+                                        type="number"
+                                        min="1"
+                                        max="52"
+                                        value={capacityConfig.weeksAhead}
+                                        onChange={(e) => setCapacityConfig({ ...capacityConfig, weeksAhead: parseInt(e.target.value) || 8 })}
+                                    />
+                                </div>
+
+                                <div className="space-y-1">
+                                    <Label>Holidays (comma-separated)</Label>
+                                    <Input
+                                        placeholder="2024-12-25, 2024-01-01"
+                                        value={capacityConfig.holidays}
+                                        onChange={(e) => setCapacityConfig({ ...capacityConfig, holidays: e.target.value })}
+                                    />
+                                    <p className="text-[10px] text-muted-foreground">Format: YYYY-MM-DD</p>
+                                </div>
+
+                                <Button className="w-full" variant="secondary" onClick={handleGenerateCapacity}>
+                                    <i data-lucide="bar-chart-2" className="w-4 h-4 mr-2"></i>
+                                    Generate Capacity Plan
+                                </Button>
+
+                                <Alert type="info">
+                                    Creates a heat-map showing team utilization per week with color coding from green (healthy) to red (overloaded).
+                                </Alert>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* LICENSE TAB */}
+                    {activeTab === 'license' && (
+                        <LicensePanel setStatus={setStatus} />
+                    )}
+
+                    {/* Global Status Footer */}
+                    {status && (
+                        <div className="pt-2">
+                            <Alert
+                                key={status.id || status.text}
+                                type={status.type}
+                                className="animate-flash"
+                            >
+                                {status.text}
+                            </Alert>
+                        </div>
+                    )}
+
+
+                    {
+                        showColumnModal && (
+                            <ColumnSelector
+                                availableFields={availableFields}
+                                currentColumns={config.columns}
+                                onSave={(cols) => {
+                                    updateConfig('columns', cols);
+                                    setShowColumnModal(false);
+                                }}
+                                onCancel={() => setShowColumnModal(false)}
+                            />
+                        )
+                    }
+                </div >
+            );
+        }; // Close App component
+
+        // Marketing Asset Layout - Matches reference style
+        const MarketingLayout = () => {
+            const params = new URLSearchParams(window.location.search);
+            const color = params.get('color') || 'blue';
+            const title = decodeURIComponent(params.get('title') || 'Feature Title');
+            const desc = decodeURIComponent(params.get('desc') || 'Feature description goes here.');
+            const feature = params.get('feature') || 'config';
+
+            const bgColor = color === 'blue' ? '#4285F4' : '#0F9D58';
+
+            // Sample spreadsheet data
+            const sheetData = [
+                ['PROJ-101', 'Login Bug', 'Done', 'High', 'john@acme.com'],
+                ['PROJ-102', 'Dashboard Performance', 'In Progress', 'Medium', 'jane@acme.com'],
+                ['PROJ-103', 'API Endpoint', 'To Do', 'Critical', 'mike@acme.com'],
+                ['PROJ-104', 'User Profile Update', 'In Review', 'Low', 'sara@acme.com'],
+                ['PROJ-105', 'Search Feature', 'In Progress', 'Medium', 'alex@acme.com'],
+                ['PROJ-106', 'Export to PDF', 'Done', 'High', 'john@acme.com'],
+                ['PROJ-107', 'Email Notifications', 'To Do', 'Medium', 'jane@acme.com'],
+                ['PROJ-108', 'Dark Mode', 'In Progress', 'Low', 'mike@acme.com'],
+            ];
+            const headers = ['Key', 'Summary', 'Status', 'Priority', 'Assignee'];
+
+            return (
+                <div className="flex w-full h-screen overflow-hidden" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                    {/* Left: Product Screenshot (~65%) */}
+                    <div className="flex-1 bg-gray-100 p-0 flex items-stretch">
+                        <div className="w-full flex flex-col shadow-xl">
+                            {/* Google Sheets Header Bar */}
+                            <div className="bg-white border-b px-4 py-2 flex items-center gap-4">
+                                <img src="https://www.gstatic.com/images/branding/product/1x/sheets_2020q4_48dp.png" className="w-8 h-8" alt="Sheets" />
+                                <div className="flex-1">
+                                    <div className="text-sm font-medium text-gray-800">Jira Project Tracker</div>
+                                    <div className="text-xs text-gray-500">File Edit View Insert Format Data Tools Extensions Help</div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button className="bg-[#1a73e8] text-white text-sm px-4 py-1.5 rounded-md flex items-center gap-1">
+                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" /></svg>
+                                        Share
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Spreadsheet Content */}
+                            <div className="flex-1 flex bg-white overflow-hidden">
+                                {/* Sheet Grid */}
+                                <div className="flex-1 flex flex-col">
+                                    {/* Column Headers */}
+                                    <div className="flex border-b bg-gray-50">
+                                        <div className="w-10 h-7 border-r bg-gray-100 flex items-center justify-center"></div>
+                                        {['A', 'B', 'C', 'D', 'E', 'F'].map(col => (
+                                            <div key={col} className="w-28 h-7 border-r flex items-center justify-center text-xs text-gray-600 font-medium">{col}</div>
+                                        ))}
+                                    </div>
+                                    {/* Header Row */}
+                                    <div className="flex border-b bg-blue-50">
+                                        <div className="w-10 h-7 border-r bg-gray-100 flex items-center justify-center text-xs text-gray-500">1</div>
+                                        {headers.map((h, i) => (
+                                            <div key={i} className="w-28 h-7 border-r flex items-center px-2 text-xs font-semibold text-gray-700">{h}</div>
+                                        ))}
+                                        <div className="w-28 h-7 border-r"></div>
+                                    </div>
+                                    {/* Data Rows */}
+                                    {sheetData.map((row, rowIdx) => (
+                                        <div key={rowIdx} className="flex border-b hover:bg-blue-50/30">
+                                            <div className="w-10 h-6 border-r bg-gray-50 flex items-center justify-center text-xs text-gray-500">{rowIdx + 2}</div>
+                                            {row.map((cell, colIdx) => (
+                                                <div key={colIdx} className="w-28 h-6 border-r flex items-center px-2 text-xs text-gray-700 truncate">{cell}</div>
+                                            ))}
+                                            <div className="w-28 h-6 border-r"></div>
+                                        </div>
+                                    ))}
+                                    {/* Empty rows */}
+                                    {[...Array(12)].map((_, i) => (
+                                        <div key={i} className="flex border-b">
+                                            <div className="w-10 h-6 border-r bg-gray-50 flex items-center justify-center text-xs text-gray-400">{i + 10}</div>
+                                            {[...Array(6)].map((_, j) => (
+                                                <div key={j} className="w-28 h-6 border-r"></div>
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Add-on Sidebar */}
+                                <div className="w-[340px] border-l shadow-lg bg-white flex flex-col">
+                                    {/* Sidebar Header */}
+                                    <div className="bg-[#1a73e8] text-white px-4 py-3 flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                                            <span className="font-medium text-sm">Jira Sync for Sheets</span>
+                                        </div>
+                                        <button className="text-white/80 hover:text-white">×</button>
+                                    </div>
+                                    {/* Sidebar Content */}
+                                    <div className="flex-1 overflow-y-auto">
+                                        <App initialTab={feature} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right: Colored Panel with Text (~35%) */}
+                    <div className="w-[420px] flex flex-col justify-center px-12 py-16" style={{ backgroundColor: bgColor }}>
+                        <h1 className="text-white text-4xl font-bold mb-6 leading-tight">{title}</h1>
+                        <p className="text-white/90 text-lg leading-relaxed">{desc}</p>
+                    </div>
+                </div>
+            );
+        };
+
+        const Main = () => {
+            const params = new URLSearchParams(window.location.search);
+            const isMarketing = params.get('mode') === 'marketing';
+            return isMarketing ? <MarketingLayout /> : <App />;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Main />);
+    </script>
+</body>
+
+</html>

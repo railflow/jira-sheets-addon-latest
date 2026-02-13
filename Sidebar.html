@@ -1,0 +1,2871 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <base target="_top">
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Stripe.js -->
+    <script src="https://js.stripe.com/v3/"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        border: "hsl(var(--border))",
+                        input: "hsl(var(--input))",
+                        ring: "hsl(var(--ring))",
+                        background: "hsl(var(--background))",
+                        foreground: "hsl(var(--foreground))",
+                        primary: {
+                            DEFAULT: "hsl(var(--primary))",
+                            foreground: "hsl(var(--primary-foreground))",
+                        },
+                        secondary: {
+                            DEFAULT: "hsl(var(--secondary))",
+                            foreground: "hsl(var(--secondary-foreground))",
+                        },
+                        destructive: {
+                            DEFAULT: "hsl(var(--destructive))",
+                            foreground: "hsl(var(--destructive-foreground))",
+                        },
+                        muted: {
+                            DEFAULT: "hsl(var(--muted))",
+                            foreground: "hsl(var(--muted-foreground))",
+                        },
+                        accent: {
+                            DEFAULT: "hsl(var(--accent))",
+                            foreground: "hsl(var(--accent-foreground))",
+                        },
+                        card: {
+                            DEFAULT: "hsl(var(--card))",
+                            foreground: "hsl(var(--card-foreground))",
+                        },
+                    },
+                    borderRadius: {
+                        lg: `var(--radius)`,
+                        md: `calc(var(--radius) - 2px)`,
+                        sm: "calc(var(--radius) - 4px)",
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        @layer base {
+            :root {
+                --background: 0 0% 100%;
+                --foreground: 240 10% 3.9%;
+                --card: 0 0% 100%;
+                --card-foreground: 240 10% 3.9%;
+                --primary: 240 5.9% 10%;
+                --primary-foreground: 0 0% 98%;
+                --secondary: 240 4.8% 95.9%;
+                --secondary-foreground: 240 5.9% 10%;
+                --muted: 240 4.8% 95.9%;
+                --muted-foreground: 240 3.8% 46.1%;
+                --accent: 240 4.8% 95.9%;
+                --accent-foreground: 240 5.9% 10%;
+                --destructive: 0 84.2% 60.2%;
+                --destructive-foreground: 0 0% 98%;
+                --border: 240 5.9% 90%;
+                --input: 240 5.9% 90%;
+                --ring: 240 5.9% 10%;
+                --radius: 0.5rem;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        /* Custom scrollbar for better look in Sidebar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        button.ghost:active {
+            background: transparent;
+        }
+
+        @keyframes flash {
+            0% {
+                opacity: 0.5;
+                transform: scale(0.98);
+            }
+
+            50% {
+                opacity: 1;
+                transform: scale(1.02);
+            }
+
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .animate-flash {
+            animation: flash 0.3s ease-in-out;
+        }
+
+        .animation-fade-in {
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .animation-slide-up {
+            animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(12px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-background text-foreground p-4">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        // Injected from Apps Script Template
+        const INITIAL_MODE = "<?= initialMode ?>";
+        const USER_EMAIL = "<?= userEmail ?>";
+        const CLOUDFLARE_WORKER_URL = "https://jira-proxy.railflow.workers.dev";
+
+        /* --- COMPONENTS --- */
+        const cn = (...classes) => classes.filter(Boolean).join(' ');
+
+        const Button = ({ className, variant = "default", size = "default", children, ...props }) => {
+            const variants = {
+                default: "bg-primary text-primary-foreground hover:bg-primary/90",
+                destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+                outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+                secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-input",
+                ghost: "hover:bg-accent hover:text-accent-foreground",
+            };
+            const sizes = {
+                default: "h-9 px-4 py-2",
+                sm: "h-8 rounded-md px-3 text-xs",
+                lg: "h-10 rounded-md px-8",
+                icon: "h-9 w-9",
+            };
+            return (
+                <button
+                    className={cn(
+                        "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                        variants[variant],
+                        sizes[size],
+                        className
+                    )}
+                    {...props}
+                >
+                    {children}
+                </button>
+            );
+        };
+
+        const Input = ({ className, ...props }) => (
+            <input className={cn("flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50", className)} {...props} />
+        );
+
+        const Textarea = ({ className, ...props }) => (
+            <textarea className={cn("flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50", className)} {...props} />
+        );
+
+        const Label = ({ className, children, ...props }) => (
+            <label className={cn("text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70", className)} {...props}>
+                {children}
+            </label>
+        );
+
+
+
+        const Tabs = ({ value, onValueChange, children }) => (
+            <div className="w-full">{children}</div>
+        );
+
+        const TabsList = ({ children }) => (
+            <div className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground w-full mb-4">
+                {children}
+            </div>
+        );
+
+        const TabsTrigger = ({ value, currentValue, onClick, children }) => (
+            <button
+                onClick={() => onClick(value)}
+                className={cn(
+                    "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 flex-1",
+                    currentValue === value ? "bg-background text-foreground shadow" : "hover:bg-background/50"
+                )}
+            >
+                {children}
+            </button>
+        );
+
+
+
+        const Alert = ({ type, children, className, action }) => {
+            const styles = {
+                error: "bg-red-50 text-red-900 border-red-200",
+                success: "bg-green-50 text-green-900 border-green-200",
+                info: "bg-blue-50 text-blue-900 border-blue-200"
+            };
+            return (
+                <div className={cn("p-3 rounded-md text-xs border flex items-center justify-between", styles[type], className)}>
+                    <div>{children}</div>
+                    {action && (
+                        <button
+                            className="ml-2 font-bold underline hover:no-underline whitespace-nowrap"
+                            onClick={action.onClick}
+                        >
+                            {action.label}
+                        </button>
+                    )}
+                </div>
+            )
+        };
+
+        const Tooltip = ({ text, children }) => {
+            const [visible, setVisible] = useState(false);
+            return (
+                <div className="relative flex items-center" onMouseEnter={() => setVisible(true)} onMouseLeave={() => setVisible(false)}>
+                    {children}
+                    {visible && (
+                        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-black text-white text-[10px] rounded whitespace-nowrap z-50">
+                            {text}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+        // CHECKOUT PANEL COMPONENT
+        const CheckoutPanel = ({ email, plan, priceId, price, domain, seats, onCancel, onSuccess, setStatus }) => {
+            const [loading, setLoading] = useState(false);
+            const [stripe, setStripe] = useState(null);
+            const [elements, setElements] = useState(null);
+            const [clientSecret, setClientSecret] = useState(null);
+
+            useEffect(() => {
+                // Initialize Stripe
+                if (window.Stripe) {
+                    setStripe(window.Stripe('pk_live_placeholder')); // User will replace or we'll fetch
+                }
+            }, []);
+
+            const handlePay = async (e) => {
+                if (e) e.preventDefault();
+
+                // Open window immediately to avoid popup blockers
+                const checkoutWindow = window.open('about:blank', '_blank');
+                if (!checkoutWindow) {
+                    setStatus({ type: 'error', text: 'Popup blocked! Please allow popups to continue to payment.' });
+                    return;
+                }
+                checkoutWindow.document.write('<!DOCTYPE html><html><head><title>Redirecting...</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f8fafc;color:#1e293b;}</style></head><body><div style="text-align:center;"><p>Redirecting to Secure Checkout...</p></div></body></html>');
+
+                setLoading(true);
+                try {
+                    const workerUrl = CLOUDFLARE_WORKER_URL;
+                    const res = await fetch(`${workerUrl}/api/stripe/create-session`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            email: USER_EMAIL,
+                            plan,
+                            priceId,
+                            domain: domain,
+                            seats: seats
+                        })
+                    });
+                    const data = await res.json();
+
+                    if (data.url) {
+                        checkoutWindow.location.href = data.url;
+                    } else if (data.error) {
+                        checkoutWindow.close();
+                        const errorDetails = `Checkout Creation Error: ${data.error}\nParams: ${JSON.stringify({ plan, priceId, domain, seats })}`;
+                        google.script.run.logRefreshAttempt('ERROR', errorDetails, 'Checkout');
+                        setStatus({ type: 'error', text: 'Stripe Error: ' + data.error + '. See "☰ Logs" for details.' });
+                    }
+                } catch (err) {
+                    if (checkoutWindow) checkoutWindow.close();
+                    const errorDetails = `Failed to start checkout: ${err.message}\nStack: ${err.stack || 'N/A'}`;
+                    google.script.run.logRefreshAttempt('ERROR', errorDetails, 'Checkout');
+                    setStatus({ type: 'error', text: 'Failed to start checkout: ' + err.message + '. See "☰ Logs" for details.' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="space-y-4 p-4 border rounded-xl bg-white shadow-sm animation-slide-up">
+                    <div className="flex items-center justify-between border-b pb-2">
+                        <h3 className="font-bold flex items-center gap-2">
+                            <i data-lucide="credit-card" className="w-4 h-4 text-primary"></i>
+                            Secure Checkout
+                        </h3>
+                        <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+                            <i data-lucide="x" className="w-4 h-4"></i>
+                        </button>
+                    </div>
+
+                    <div className="bg-slate-50 p-3 rounded-lg text-xs space-y-2">
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">Product</span>
+                            <span className="font-medium">Jira Sync {plan === 'individual' ? 'Pro' : 'Organization'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">Total</span>
+                            <span className="font-bold text-primary">{price}</span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg border border-blue-100 italic">
+                            <i data-lucide="info" className="w-4 h-4 text-blue-600 mt-0.5 shrink-0"></i>
+                            <p className="text-[10px] text-blue-800 leading-tight">
+                                You will be securely redirected to Stripe's payment page to complete your purchase.
+                            </p>
+                        </div>
+
+                        <Button className="w-full" onClick={handlePay} disabled={loading}>
+                            {loading ? (
+                                <><span className="animate-spin mr-2">⏳</span> Processing...</>
+                            ) : (
+                                <><i data-lucide="lock" className="w-4 h-4 mr-2"></i> Pay {price}</>
+                            )}
+                        </Button>
+
+                        <Button className="w-full" variant="outline" onClick={onCancel} disabled={loading}>
+                            <i data-lucide="arrow-left" className="w-4 h-4 mr-2"></i>
+                            Back to Plans
+                        </Button>
+
+                        <p className="text-[10px] text-center text-muted-foreground flex items-center justify-center gap-1">
+                            <i data-lucide="shield-check" className="w-3 h-3"></i>
+                            Secure payments by Stripe
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
+        // LICENSE PANEL COMPONENT
+        const LicensePanel = ({ license, setLicense, setStatus, loadLicenseInfo }) => {
+            const [pricing, setPricing] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [purchaseType, setPurchaseType] = useState('individual');
+            const [domainInput, setDomainInput] = useState('');
+            const [seatsInput, setSeatsInput] = useState(10);
+            const [billingCycle, setBillingCycle] = useState('yearly');
+            const [showCheckout, setShowCheckout] = useState(false);
+            const [selectedPriceId, setSelectedPriceId] = useState(null);
+            const [selectedPrice, setSelectedPrice] = useState(null);
+
+            useEffect(() => {
+                loadPricing();
+                if (USER_EMAIL) {
+                    const emailDomain = USER_EMAIL.split('@')[1];
+                    setDomainInput(emailDomain || '');
+                }
+            }, []);
+
+            const loadPricing = () => {
+                google.script.run
+                    .withSuccessHandler(setPricing)
+                    .withFailureHandler(() => { })
+                    .getPricingInfo();
+            };
+
+            const handleUpgrade = () => {
+                const selectedPricing = pricing[purchaseType];
+                if (!selectedPricing) return;
+
+                const planData = billingCycle === 'yearly' ? selectedPricing.yearly : selectedPricing.monthly;
+
+                const priceId = planData?.priceId;
+
+                if (!priceId) {
+                    setStatus({ type: 'error', text: 'Pricing configuration missing.' });
+                    return;
+                }
+
+                // Domain/Unlimited validation
+                if ((purchaseType === 'domain' || purchaseType === 'unlimited') && (!domainInput || !domainInput.includes('.'))) {
+                    setStatus({ type: 'error', text: 'Please enter a valid company domain.' });
+                    return;
+                }
+
+                let finalPrice = planData.price;
+                if (purchaseType === 'domain') {
+                    const unitPrice = planData.value;
+                    const total = unitPrice * seatsInput;
+                    finalPrice = `$${total}/${billingCycle === 'yearly' ? 'year' : 'month'} (${seatsInput} seats)`;
+                }
+
+                // Use the checkout panel
+                setSelectedPriceId(priceId);
+                setSelectedPrice(finalPrice);
+                setShowCheckout(true);
+            };
+
+            const handleCheckoutSuccess = () => {
+                setShowCheckout(false);
+                setStatus({ type: 'success', text: 'Payment successful! Updating license...' });
+                // In a real app, the webhook would update KV. 
+                // We'll mock a success by reloading license info after a delay.
+                setTimeout(() => loadLicenseInfo(true), 3000);
+            };
+
+            const handleManageSubscription = () => {
+                setStatus({ type: 'info', text: 'Opening subscription portal...' });
+                google.script.run
+                    .withSuccessHandler((result) => {
+                        if (result.url) {
+                            window.open(result.url, '_blank');
+                            setStatus({ type: 'success', text: 'Portal opened in new tab' });
+                        }
+                    })
+                    .withFailureHandler((err) => {
+                        setStatus({ type: 'error', text: err.message });
+                    })
+                    .createManageSubscriptionSession();
+            };
+
+            if (loading) {
+                return (
+                    <div className="flex items-center justify-center py-12">
+                        <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full"></div>
+                    </div>
+                );
+            }
+
+            if (showCheckout) {
+                return (
+                    <CheckoutPanel
+                        email={license?.email}
+                        plan={purchaseType}
+                        priceId={selectedPriceId}
+                        price={selectedPrice}
+                        domain={domainInput}
+                        seats={seatsInput}
+                        onCancel={() => setShowCheckout(false)}
+                        onSuccess={handleCheckoutSuccess}
+                        setStatus={setStatus}
+                    />
+                );
+            }
+
+            const isPro = license?.allowed && license?.plan !== 'free';
+
+            return (
+                <div className="space-y-4 animation-fade-in">
+                    {/* Header */}
+                    <div className="text-center py-4">
+                        <i data-lucide="crown" className="w-12 h-12 mx-auto mb-2 text-yellow-500"></i>
+                        <h2 className="text-lg font-bold">License Information</h2>
+                        <p className="text-sm text-muted-foreground">Manage your subscription</p>
+                        {!USER_EMAIL && (
+                            <div className="mt-2 text-red-500 text-xs font-medium">
+                                <i data-lucide="alert-circle" className="w-3 h-3 inline mr-1"></i>
+                                Google account email not detected!
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Current License Status */}
+                    <div className={cn(
+                        "p-4 rounded-lg border-2",
+                        isPro ? "border-yellow-400 bg-yellow-50" : "border-gray-200 bg-gray-50"
+                    )}>
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-medium text-muted-foreground uppercase">Current Plan</span>
+                            <span className={cn(
+                                "px-2 py-1 rounded text-xs font-bold uppercase",
+                                isPro ? "bg-yellow-400 text-yellow-900" : "bg-gray-200 text-gray-600"
+                            )}>
+                                {license?.plan || 'Free'}
+                            </span>
+                        </div>
+
+                        <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Email:</span>
+                                <span className="font-medium truncate ml-2">{license?.email || USER_EMAIL || 'Unknown'}</span>
+                            </div>
+
+                            {license?.licenseType === 'domain' && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">License Type:</span>
+                                    <span className="font-medium">Domain ({license.domain})</span>
+                                </div>
+                            )}
+
+                            {license?.status && license.status !== 'none' && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Status:</span>
+                                    <span className={cn(
+                                        "font-medium",
+                                        license.status === 'active' ? "text-green-600" :
+                                            license.status === 'trialing' ? "text-blue-600" : "text-red-600"
+                                    )}>
+                                        {license.status.charAt(0).toUpperCase() + license.status.slice(1)}
+                                    </span>
+                                </div>
+                            )}
+
+                            {license?.expiresAt && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Renews:</span>
+                                    <span className="font-medium">{new Date(license.expiresAt).toLocaleDateString()}</span>
+                                </div>
+                            )}
+
+                            {license?.seats && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Seats:</span>
+                                    <span className="font-medium">{license.usedSeats || 0} / {license.seats}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Features List */}
+                        {isPro && license?.features?.length > 0 && (
+                            <div className="mt-3 pt-3 border-t">
+                                <p className="text-xs font-medium text-muted-foreground mb-2">Included Features:</p>
+                                <div className="flex flex-wrap gap-1">
+                                    {license.features.map((f, i) => (
+                                        <span key={i} className="px-2 py-0.5 bg-white rounded text-xs border">
+                                            {f.replace(/_/g, ' ')}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                    </div>
+
+                    {/* Pro Actions */}
+                    {
+                        isPro ? (
+                            <div className="space-y-2">
+                                <Button className="w-full" variant="outline" onClick={handleManageSubscription}>
+                                    <i data-lucide="settings" className="w-4 h-4 mr-2"></i>
+                                    Manage Subscription
+                                </Button>
+                            </div>
+                        ) : (
+                            /* Upgrade Section */
+                            <div className="space-y-4">
+                                <div className="text-center">
+                                    <h3 className="font-bold text-lg">Upgrade to Pro</h3>
+                                    <p className="text-sm text-muted-foreground">Unlock all features</p>
+                                </div>
+
+                                <Button className="w-full" variant="outline" size="sm" onClick={() => loadLicenseInfo()}>
+                                    <i data-lucide="refresh-cw" className="w-4 h-4 mr-2"></i>
+                                    Refresh Status
+                                </Button>
+
+                                {/* Purchase Type Toggle */}
+                                <div className="flex rounded-lg bg-muted p-1">
+                                    <button
+                                        onClick={() => setPurchaseType('individual')}
+                                        className={cn(
+                                            "flex-1 py-1.5 px-1 rounded-md text-[10px] font-bold transition-all truncate",
+                                            purchaseType === 'individual' ? "bg-background shadow" : "hover:bg-background/50"
+                                        )}
+                                    >
+                                        Personal
+                                    </button>
+                                    <button
+                                        onClick={() => setPurchaseType('unlimited')}
+                                        className={cn(
+                                            "flex-1 py-1.5 px-1 rounded-md text-[10px] font-bold transition-all truncate",
+                                            purchaseType === 'unlimited' ? "bg-background shadow font-bold" : "hover:bg-background/50"
+                                        )}
+                                    >
+                                        Unlimited
+                                    </button>
+                                </div>
+
+                                {/* Domain Input (for unlimited purchase) */}
+                                {purchaseType === 'unlimited' && (
+                                    <div className="space-y-3 p-3 bg-muted rounded-lg border border-indigo-100 italic">
+                                        <div className="space-y-1">
+                                            <Label>Organization Domain</Label>
+                                            <Input
+                                                placeholder="company.com"
+                                                value={domainInput}
+                                                onChange={(e) => setDomainInput(e.target.value)}
+                                            />
+                                            <p className="text-[10px] text-muted-foreground">
+                                                All users with @{domainInput || 'company.com'} emails will have full Pro access.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Billing Cycle Toggle */}
+                                <div className="flex rounded-lg bg-muted p-1">
+                                    <button
+                                        onClick={() => setBillingCycle('monthly')}
+                                        className={cn(
+                                            "flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all",
+                                            billingCycle === 'monthly' ? "bg-background shadow" : "hover:bg-background/50"
+                                        )}
+                                    >
+                                        Monthly
+                                    </button>
+                                    <button
+                                        onClick={() => setBillingCycle('yearly')}
+                                        className={cn(
+                                            "flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all relative",
+                                            billingCycle === 'yearly' ? "bg-background shadow" : "hover:bg-background/50"
+                                        )}
+                                    >
+                                        Yearly
+                                        {pricing && pricing[purchaseType].monthly && (
+                                            <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-green-500 text-white text-[8px] rounded-full">
+                                                SAVE {Math.abs(Math.round(100 - (pricing[purchaseType].yearly.value / (pricing[purchaseType].monthly.value * 12) * 100)))}%
+                                            </span>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {/* Pricing Display */}
+                                {pricing && (
+                                    <div className="text-center py-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
+                                        <div className="text-2xl font-bold text-primary">
+                                            {(() => {
+                                                const p = pricing[purchaseType];
+                                                const data = p[billingCycle];
+                                                return data?.price || '$0';
+                                            })()}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground mt-1 text-indigo-800 font-medium">
+                                            {purchaseType === 'individual' ? 'Personal Subscription' :
+                                                `Unlimited Users for @${domainInput || 'organization'}`}
+                                        </p>
+                                    </div>
+                                )}
+                                {/* Features List */}
+                                {pricing && (
+                                    <div className="space-y-2">
+                                        <p className="text-xs font-medium text-muted-foreground">What's included:</p>
+                                        <ul className="space-y-1">
+                                            {(pricing[purchaseType]?.features)?.map((feature, i) => (
+                                                <li key={i} className="flex items-center text-sm">
+                                                    <i data-lucide="check" className="w-4 h-4 mr-2 text-green-500"></i>
+                                                    {feature}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                <Button className="w-full" onClick={handleUpgrade}>
+                                    <i data-lucide="zap" className="w-4 h-4 mr-2"></i>
+                                    Upgrade Now
+                                </Button>
+
+                                <p className="text-center text-xs text-muted-foreground">
+                                    Secure payment via Stripe. Cancel anytime.
+                                </p>
+                            </div>
+                        )
+                    }
+
+                </div >
+            );
+        };
+
+        const ColumnSelector = ({ availableFields, currentColumns, onSave, onCancel }) => {
+            const [search, setSearch] = useState("");
+            const [selected, setSelected] = useState([]);
+
+            useEffect(() => {
+                const cols = (currentColumns || "").split(',').map(c => c.trim()).filter(Boolean);
+                const initialSelected = cols.map(c => {
+                    const field = availableFields.find(f => f.id === c || f.key === c || f.name === c) || { id: c, name: c, key: c };
+                    return field;
+                });
+                setSelected(initialSelected);
+            }, [currentColumns, availableFields]);
+
+            const filteredAvailable = availableFields
+                .filter(f => {
+                    const name = (f.name || "").toLowerCase();
+                    const key = (f.key || f.id || "").toLowerCase();
+                    const s = (search || "").toLowerCase();
+                    return name.includes(s) || key.includes(s);
+                });
+
+            const toggleField = (field) => {
+                const exists = selected.find(s => s.id === field.id || (s.key && s.key === field.key));
+                if (exists) {
+                    setSelected(selected.filter(s => (s.id !== field.id) && (!s.key || s.key !== field.key)));
+                } else {
+                    setSelected([...selected, field]);
+                }
+            };
+
+            const removeField = (field) => {
+                setSelected(selected.filter(s => (s.id !== field.id) && (!s.key || s.key !== field.key)));
+            };
+
+            const handleSave = () => {
+                onSave(selected.map(s => s.id || s.key || s.name).join(', '));
+            };
+
+            const MANDATORY_FIELDS = ['summary', 'issuetype', 'project'];
+            const isMandatory = (field) => MANDATORY_FIELDS.includes(field.key?.toLowerCase() || field.name?.toLowerCase());
+
+            return (
+                <div className="border rounded-md bg-background flex flex-col overflow-hidden max-h-[400px]">
+                    <div className="p-2 border-b bg-muted/30 flex justify-between items-center">
+                        <span className="text-xs font-bold uppercase text-muted-foreground">Select Columns</span>
+                        <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+                            <i data-lucide="x" className="w-3 h-3"></i>
+                        </button>
+                    </div>
+
+                    <div className="p-2 border-b">
+                        <Input
+                            placeholder="Search fields..."
+                            className="h-8 text-xs"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="flex-1 overflow-auto p-2 space-y-4">
+                        {selected.length > 0 && (
+                            <div className="mb-2">
+                                <div className="flex flex-wrap gap-1">
+                                    {selected.map((f, i) => (
+                                        <span key={i} className={cn(
+                                            "inline-flex items-center px-1.5 py-0.5 rounded bg-secondary text-[10px] border border-input",
+                                            isMandatory(f) && "text-red-600 font-medium"
+                                        )}>
+                                            {f.name}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    removeField(f);
+                                                }}
+                                                className="ml-1 text-muted-foreground hover:text-red-500 cursor-pointer"
+                                                type="button"
+                                            >
+                                                <i data-lucide="x" className="w-2.5 h-2.5"></i>
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="space-y-1">
+                            {filteredAvailable.sort((a, b) => (a.name || "").localeCompare(b.name || "")).map(f => {
+                                const isSelected = !!selected.find(s => s.id === f.id || (s.key && s.key === f.key));
+                                return (
+                                    <button
+                                        key={f.id}
+                                        onClick={() => toggleField(f)}
+                                        className={cn(
+                                            "w-full text-left text-xs p-1.5 rounded flex items-center gap-2 transition-colors",
+                                            isSelected ? "bg-secondary/50" : "hover:bg-secondary"
+                                        )}
+                                    >
+                                        <div className={cn(
+                                            "w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors",
+                                            isSelected ? "bg-primary border-primary text-primary-foreground" : "border-input"
+                                        )}>
+                                            {isSelected && <i data-lucide="check" className="w-2.5 h-2.5"></i>}
+                                        </div>
+                                        <span className={cn("truncate", isMandatory(f) && "text-red-600")}>
+                                            {f.name}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="p-2 border-t bg-muted/30 flex justify-end space-x-2">
+                        <Button size="sm" className="h-7 text-xs" variant="secondary" onClick={handleSave}>Apply Columns</Button>
+                    </div>
+                </div>
+            );
+        };
+
+        const JiraDataControl = ({ config, updateConfig, jqlStats, filters, availableFields, onFetch, loading, children }) => {
+            const [isEditingColumns, setIsEditingColumns] = useState(false);
+
+            return (
+                <div className="space-y-4 border p-3 rounded-md bg-card/50 mb-4">
+                    <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                            <Label>JQL Query</Label>
+                            {jqlStats.checking ? (
+                                <span className="text-[10px] text-muted-foreground">Validating...</span>
+                            ) : jqlStats.valid ? (
+                                <span className="text-[10px] text-green-600 font-medium">{jqlStats.count} matches</span>
+                            ) : (
+                                <span className="text-[10px] text-red-600">Invalid JQL</span>
+                            )}
+                        </div>
+                        <Textarea
+                            className="font-mono text-xs min-h-[60px]"
+                            placeholder="project = PROJ..."
+                            value={config.jql}
+                            onChange={e => updateConfig('jql', e.target.value)}
+                        />
+                        {!jqlStats.valid && jqlStats.error && (
+                            <p className="text-[10px] text-red-500">{jqlStats.error}</p>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                            <Label>Filter</Label>
+                            <select
+                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm"
+                                value={SYSTEM_FILTERS.some(f => f.jql === config.jql) ? config.jql : ""}
+                                onChange={(e) => {
+                                    if (e.target.value) updateConfig('jql', e.target.value);
+                                }}
+                            >
+                                <option value="">Standard...</option>
+                                {SYSTEM_FILTERS.map((f, i) => (
+                                    <option key={i} value={f.jql}>{f.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <Label>Favorites</Label>
+                            <select
+                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm"
+                                value={config.jql?.startsWith('filter = ') ? config.jql.replace('filter = ', '') : ""}
+                                onChange={(e) => {
+                                    if (e.target.value) updateConfig('jql', `filter = ${e.target.value}`);
+                                }}
+                            >
+                                <option value="">My Filters...</option>
+                                {filters.map(f => (
+                                    <option key={f.id} value={f.id}>{f.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="space-y-1">
+                        <Label>Columns</Label>
+                        {!isEditingColumns ? (
+                            <div className="flex gap-2">
+                                <div className="flex-1 text-xs p-2 border rounded bg-muted/50 truncate min-h-[32px] flex items-center" title={config.columns}>
+                                    {config.columns ? config.columns.split(',').map(c => {
+                                        const field = availableFields.find(f => f.id === c.trim() || f.key === c.trim());
+                                        return field ? field.name : c.trim();
+                                    }).join(', ') : "No columns selected"}
+                                </div>
+                                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setIsEditingColumns(true)} title="Edit Columns">
+                                    <i data-lucide="pencil" className="w-3 h-3"></i>
+                                </Button>
+                            </div>
+                        ) : (
+                            <ColumnSelector
+                                availableFields={availableFields}
+                                currentColumns={config.columns}
+                                onSave={(cols) => {
+                                    updateConfig('columns', cols);
+                                    setIsEditingColumns(false);
+                                }}
+                                onCancel={() => setIsEditingColumns(false)}
+                            />
+                        )}
+                    </div>
+
+                    <Button className="w-full" size="sm" onClick={onFetch} disabled={loading}>
+                        {loading ? <i data-lucide="loader-2" className="w-4 h-4 mr-2 animate-spin"></i> : <i data-lucide="download" className="w-4 h-4 mr-2"></i>}
+                        Fetch Issues
+                    </Button>
+
+                    {children}
+                </div>
+            );
+        };
+
+        /* --- APP LOGIC --- */
+
+        const SYSTEM_FILTERS = [
+            { name: "My Open Issues", jql: "assignee = currentUser() AND resolution = Unresolved order by updated DESC" },
+            { name: "Reported by Me", jql: "reporter = currentUser() order by created DESC" },
+            { name: "Viewed Recently", jql: "issue in issueHistory() order by lastViewed DESC" },
+            { name: "All Issues", jql: "order by created DESC" },
+            { name: "Open Issues", jql: "resolution = Unresolved order by created DESC" },
+            { name: "Done Issues", jql: "statusCategory = Done order by updated DESC" },
+            { name: "Created Recently", jql: "created >= -1w order by created DESC" },
+            { name: "Created in Last 2 Years", jql: "created >= -730d order by created DESC" },
+            { name: "Updated Recently", jql: "updated >= -1w order by updated DESC" },
+            { name: "Resolved Recently", jql: "resolutiondate >= -1w order by resolutiondate DESC" }
+        ];
+
+        const App = () => {
+            // State
+            const [activeTab, setActiveTab] = useState(INITIAL_MODE || 'config');
+            const [config, setConfig] = useState({
+                domain: '', email: '', token: '',
+                jql: 'assignee = currentUser() AND resolution = Unresolved order by updated DESC', // My Open Issues
+                columns: 'key, summary, status, priority, assignee, issuetype, created, updated, resolutiondate',
+                interval: 10,
+                useCloudflare: false
+            });
+            const [dashboardConfig, setDashboardConfig] = useState({ jql: '', columns: '' });
+            const [metricsConfig, setMetricsConfig] = useState({ jql: '', columns: '' });
+
+
+
+            useEffect(() => {
+                if (config.token && !dashboardConfig.token) setDashboardConfig(prev => ({ ...prev, ...config }));
+                if (config.token && !metricsConfig.token) setMetricsConfig(prev => ({ ...prev, ...config }));
+            }, [config]);
+
+            // Status
+            const [status, setStatus] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [license, setLicense] = useState({ allowed: true, plan: 'Checking...', status: 'loading' });
+
+            const loadLicenseInfo = async (silent = true) => {
+                try {
+                    const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/license/check`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: USER_EMAIL })
+                    });
+
+                    if (!res.ok) {
+                        const errBody = await res.text();
+                        throw new Error(`HTTP ${res.status}: ${errBody}`);
+                    }
+
+                    const data = await res.json();
+
+                    // Success detection: if we were checking or free and now have a plan
+                    const upgraded = (license.plan === 'Checking...' || license.plan === 'free') && (data.plan && data.plan !== 'free');
+
+                    setLicense(data);
+
+                    if (upgraded) {
+                        setStatus({ type: 'success', text: `License activated! Enjoy ${data.plan.toUpperCase()} features.` });
+                    } else if (!silent) {
+                        setStatus({ type: 'info', text: 'License status updated.' });
+                    }
+
+                    // Automatically enable/disable cloudflare based on license if needed
+                    if (!data.allowed && config.useCloudflare) {
+                        setConfig(prev => ({ ...prev, useCloudflare: false }));
+                    }
+                } catch (e) {
+                    console.error("License check failed", e);
+                    const errorDetails = `License check failed: ${e.message}\nURL: ${CLOUDFLARE_WORKER_URL}/api/license/check\nStack: ${e.stack || 'N/A'}\nFull Error: ${JSON.stringify(e, Object.getOwnPropertyNames(e))}`;
+
+                    // Dump to "Logs" menu system
+                    google.script.run.logRefreshAttempt('ERROR', errorDetails, 'License Check');
+
+                    setStatus({
+                        type: 'error',
+                        text: `License check failed. See "☰ Logs" menu for technical details. \nError: ${e.message}`
+                    });
+                    setLicense({ allowed: true, plan: 'Trial', status: 'active (offline)' });
+                }
+            };
+            const [connectionTest, setConnectionTest] = useState(null);
+
+            // JQL Logic
+            const [jqlStats, setJqlStats] = useState({ count: 0, valid: true, error: null, checking: false });
+            const [filters, setFilters] = useState([]);
+            const [projects, setProjects] = useState([]);
+
+            // UX State
+            const [showColumnModal, setShowColumnModal] = useState(false);
+            const [targetConfigMode, setTargetConfigMode] = useState('global');
+            const [availableFields, setAvailableFields] = useState([]);
+            const [dashboardType, setDashboardType] = useState('pie');
+            const [dashboardColumns, setDashboardColumns] = useState(['status', 'issuetype', 'priority', 'assignee']);
+            const [sheetHeaders, setSheetHeaders] = useState([]);
+            const [showToken, setShowToken] = useState(false);
+
+            // Scheduled Refresh / Interval
+            const [refreshMode, setRefreshMode] = useState('interval'); // 'interval' or 'scheduled'
+            const [labelsData, setLabelsData] = useState({});
+            const [roadmapConfig, setRoadmapConfig] = useState({
+                startDateCol: '',
+                endDateCol: '',
+                jql: '',
+                columns: 'key, summary, status, created, duedate, resolutiondate, priority, assignee, issuetype'
+            });
+            const [pivotConfig, setPivotConfig] = useState({ row: 'assignee', col: 'status', val: 'count', filterUser: '' });
+
+            // Interval Mode State
+            const [intervalSeconds, setIntervalSeconds] = useState(30);
+            const [isIntervalRunning, setIsIntervalRunning] = useState(false);
+
+            const [isRefreshing, setIsRefreshing] = useState(false);
+            const fetchRef = useRef(null);
+            const [countdown, setCountdown] = useState(0);
+            const [showRefreshBlink, setShowRefreshBlink] = useState(false);
+
+            // Capacity Planning
+            const [capacityConfig, setCapacityConfig] = useState({
+                estimationType: 'storypoints', // 'storypoints' or 'hours'
+                hoursPerPoint: 1,
+                hoursPerWeek: 40,
+                capacityPercent: 80,
+                holidays: '',
+                weeksAhead: 8,
+                jql: '',
+                estimateCol: '',
+                startDateCol: '',
+                assigneeCol: '',
+                dueDateCol: '',
+                columns: 'key, status, assignee, story points, due date, priority',
+                excludedUsers: []
+            });
+            const [sheetAssignees, setSheetAssignees] = useState([]);
+
+            // Sheet Polling State
+            const [currentSheetId, setCurrentSheetId] = useState(null);
+
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }); // Run on every render to catch dynamic content
+
+            // Load Config on Mount & Poll for Sheet Changes
+            useEffect(() => {
+                loadConfiguration();
+                loadLicenseInfo();
+
+                // Refresh license when user returns to sheet
+                const handleFocus = () => loadLicenseInfo();
+                window.addEventListener('focus', handleFocus);
+
+                // Poll for sheet details
+                const timer = setInterval(() => {
+                    google.script.run
+                        .withSuccessHandler(info => {
+                            if (info && info.sheetId) {
+                                setCurrentSheetId(prevId => {
+                                    if (prevId !== null && prevId !== info.sheetId) {
+                                        // Sheet changed!
+                                        const sName = info.sheetName;
+                                        const ignoredSheets = ['Jira Roadmap', 'Jira Dashboard', 'Jira Capacity Plan', 'Jira Pivot', 'label-management'];
+
+                                        // If switching to a derived sheet, DO NOTHING (don't reload, don't switch tab)
+                                        if (ignoredSheets.includes(sName)) {
+                                            return info.sheetId; // Just update ID tracking, no action
+                                        }
+
+                                        // If switching to a standard sheet (Source), reload config and show Issues tab
+                                        setActiveTab('issues');
+                                        loadConfiguration();
+                                        return info.sheetId;
+                                    }
+                                    return prevId || info.sheetId;
+                                });
+                            }
+                        })
+                        .withFailureHandler(() => { })
+                        .getPingInfo();
+                }, 2000); // Poll slower (2s)
+                return () => {
+                    clearInterval(timer);
+                    window.removeEventListener('focus', handleFocus);
+                };
+            }, []);
+
+            const loadConfiguration = () => {
+                setLoading(true);
+                // Reset Refresh State
+                setRefreshMode('interval');
+                setIsIntervalRunning(false);
+
+                google.script.run
+                    .withSuccessHandler((saved) => {
+                        if (saved) {
+                            // Ensure required columns are always present
+                            const REQUIRED_COLUMNS = ['issuetype', 'created', 'updated', 'resolutiondate'];
+                            let loadedCols = saved.columns || 'key, summary, status, priority, assignee, issuetype, created, updated, resolutiondate';
+                            const existingCols = loadedCols.split(',').map(c => c.trim().toLowerCase());
+                            const missingCols = REQUIRED_COLUMNS.filter(rc => !existingCols.includes(rc));
+                            if (missingCols.length > 0) {
+                                loadedCols = loadedCols + ', ' + missingCols.join(', ');
+                            }
+
+                            setConfig(prev => ({
+                                ...prev,
+                                domain: saved.domain || prev.domain,
+                                email: saved.email || prev.email,
+                                token: saved.token || prev.token,
+                                jql: saved.jql || '',
+                                columns: loadedCols,
+                                projectKey: saved.projectKey || prev.projectKey,
+                                useCloudflare: saved.useCloudflare || false
+                            }));
+                        }
+                        setLoading(false);
+                    })
+                    .withFailureHandler(err => {
+                        setStatus({ type: 'error', text: 'Load failed: ' + err.message });
+                        setLoading(false);
+                    })
+                    .loadConfig();
+            };
+
+            // Refresh Lucide Icons on DOM updates
+            useEffect(() => {
+                if (window.lucide) {
+                    // Small delay to ensure DOM is updated
+                    setTimeout(() => window.lucide.createIcons(), 50);
+                }
+            }, [activeTab, status, connectionTest, loading, showColumnModal, isIntervalRunning, refreshMode]);
+
+            // Fetch Filters & Projects when tab is issues and we have creds
+            useEffect(() => {
+                if ((activeTab === 'issues' || activeTab === 'dashboard' || activeTab === 'metrics') && config.token && config.domain) {
+                    google.script.run
+                        .withSuccessHandler(setFilters)
+                        .withFailureHandler(e => console.error(e))
+                        .getJiraFilters(config);
+
+                    google.script.run
+                        .withSuccessHandler(setProjects)
+                        .withFailureHandler(e => console.error(e))
+                        .getJiraProjects(config);
+                }
+            }, [activeTab, config.token, config.domain]);
+
+            // Debounced JQL Validator
+            useEffect(() => {
+                const handler = setTimeout(() => {
+                    let cfg = config;
+                    if (activeTab === 'dashboard') cfg = { ...config, ...dashboardConfig };
+                    if (activeTab === 'metrics') cfg = { ...config, ...metricsConfig };
+
+                    if (cfg.jql) validateJql(cfg);
+                }, 800);
+                return () => clearTimeout(handler);
+            }, [config.jql, dashboardConfig.jql, metricsConfig.jql, activeTab]);
+
+            // Load sheet headers when dashboard tab is opened
+            useEffect(() => {
+                if (activeTab === 'dashboard' || activeTab === 'roadmap' || activeTab === 'capacity') {
+                    google.script.run
+                        .withSuccessHandler((headers) => {
+                            setSheetHeaders(headers || []);
+                            // Set default selections to any matching columns
+                            if (headers && headers.length > 0) {
+                                const commonCols = ['status', 'issuetype', 'priority', 'assignee', 'Status', 'Issue Type', 'Priority', 'Assignee'];
+                                const matches = headers.filter(h =>
+                                    commonCols.some(c => h.toLowerCase() === c.toLowerCase())
+                                );
+                                if (matches.length > 0 && dashboardColumns.length === 0) {
+                                    setDashboardColumns(matches);
+                                }
+                            }
+                        })
+                        .withFailureHandler(() => setSheetHeaders([]))
+                        .getSheetHeaders();
+                }
+            }, [activeTab]);
+
+            const updateConfig = (key, val) => setConfig(prev => ({ ...prev, [key]: val }));
+
+            // Handlers
+            const handleSave = () => {
+                setLoading(true);
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Configuration saved' });
+                        setLoading(false);
+                        // Redirect to Issues tab after a short delay
+                        setTimeout(() => setActiveTab('issues'), 800);
+                    })
+                    .withFailureHandler(err => {
+                        setStatus({ type: 'error', text: 'Save failed: ' + err.message });
+                        setLoading(false);
+                    })
+                    .saveConfig(config);
+            };
+
+            const handleTestConnection = () => {
+                setConnectionTest({ checking: true });
+                google.script.run
+                    .withSuccessHandler((res) => {
+                        setConnectionTest({ success: true, msg: res.message });
+                    })
+                    .withFailureHandler((err) => {
+                        setConnectionTest({ success: false, msg: err.message });
+                    })
+                    .testConnection(config);
+            };
+
+            const validateJql = (cfg = config) => {
+                setJqlStats(prev => ({ ...prev, checking: true }));
+                google.script.run
+                    .withSuccessHandler((res) => {
+                        setJqlStats({
+                            checking: false,
+                            valid: res.valid,
+                            count: res.count,
+                            error: res.error
+                        });
+                    })
+                    .withFailureHandler(() => {
+                        setJqlStats({ checking: false, valid: false, count: 0, error: "Validation check failed" });
+                    })
+                    .getJqlCount(cfg);
+            };
+
+            const handleRefresh = (trigger = 'Manual', force = false, configOverride = null) => {
+                if (isRefreshing && !force) return;
+
+                const cfg = configOverride || config;
+
+                if (!cfg.domain || !cfg.email || !cfg.token) {
+                    setStatus({ type: 'error', text: 'Please configure settings first.' });
+                    return;
+                }
+
+                if (!cfg.jql) {
+                    setStatus({ type: 'error', text: 'JQL query is empty. Please provide a filter.' });
+                    return;
+                }
+
+                setIsRefreshing(true);
+                setStatus({ type: 'info', text: 'Fetching data...' });
+
+                const isPro = license?.allowed && license?.plan !== 'free';
+                const params = { ...cfg, triggerType: trigger, force: force, isPro: isPro };
+
+                // Auto-save config when refreshing manually so current JQL is persisted
+                // Skip saving if we are targeting a specific sheet (one-off fetch)
+                // Auto-save config when refreshing manually or via SmartFetch so state is persisted
+                if ((trigger === 'Manual' || trigger === 'SmartFetch') && !params.targetSheetName) {
+                    google.script.run.saveConfig(cfg);
+                }
+
+                const startTime = Date.now();
+                google.script.run
+                    .withSuccessHandler((res) => {
+                        const duration = Date.now() - startTime;
+                        if (res.warning) {
+                            if (confirm(`Warning: Found ${res.total} issues (> 5000).\nFetching this many issues may take a few minutes and could be restricted by Jira API limits.\n\nDo you want to continue?`)) {
+                                handleRefresh(trigger, true); // Retry with force
+                            } else {
+                                setIsRefreshing(false);
+                                setStatus({ type: 'info', text: 'Fetch cancelled.' });
+                            }
+                            return;
+                        }
+
+                        // Success - reload config to sync any auto-fixes (like added date columns)
+                        // But skip for targetSheetName (like label management) to avoid overwriting the JQL we just set
+                        if (!params.targetSheetName) {
+                            loadConfiguration();
+                        }
+
+                        // Small pause to let user see the update
+                        setTimeout(() => setIsRefreshing(false), 3500);
+
+                        if (res.limited) {
+                            setStatus({
+                                type: 'error',
+                                text: `Free version allows 150 issues. Please upgrade to Pro. (Fetched 150)`,
+                                action: { label: 'Upgrade to Pro', onClick: () => setActiveTab('license') }
+                            });
+                        } else {
+                            setStatus({
+                                type: 'success',
+                                text: `Fetched ${res.count} issues. ${res.changedCount} updated. ${duration} ms`
+                            });
+                        }
+                    })
+                    .withFailureHandler((err) => {
+                        setIsRefreshing(false);
+                        setStatus({ type: 'error', text: err.message });
+                    })
+                    .fetchJiraData(params);
+            };
+
+            const handleGlobalRefresh = (trigger = 'Interval') => {
+                if (isRefreshing) return;
+
+                if (!config.domain || !config.email || !config.token) {
+                    setStatus({ type: 'error', text: 'Credentials missing for global refresh.' });
+                    return;
+                }
+
+                setIsRefreshing(true);
+                setStatus({ type: 'info', text: 'Global Refresh: Updating all Jira sheets...' });
+                const isPro = license?.allowed && license?.plan !== 'free';
+
+                const startTime = Date.now();
+                google.script.run
+                    .withSuccessHandler((res) => {
+                        const duration = Date.now() - startTime;
+                        setTimeout(() => setIsRefreshing(false), 3000);
+
+                        if (res.limited) {
+                            setStatus({
+                                type: 'error',
+                                text: 'Global Sync reached 150 issue limit on some sheets. Please upgrade to Pro.',
+                                action: { label: 'Upgrade to Pro', onClick: () => setActiveTab('license') }
+                            });
+                        } else {
+                            setStatus({
+                                type: 'success',
+                                text: `Global Sync: Refreshed ${res.sheetCount} sheets (${res.count} issues). ${duration} ms`
+                            });
+                        }
+                    })
+                    .withFailureHandler((err) => {
+                        setIsRefreshing(false);
+                        setStatus({ type: 'error', text: 'Global Refresh Failed: ' + err.message });
+                    })
+                    .refreshAllJiraSheets({ ...config, triggerType: trigger, isPro: isPro });
+            };
+
+            const handleUpdate = () => {
+                setStatus({ type: 'info', text: 'Validating and processing...' });
+                const isPro = license?.allowed && license?.plan !== 'free';
+
+                google.script.run
+                    .withSuccessHandler((data) => {
+                        let updates = data.updates || [];
+                        let creates = data.creates || [];
+                        let isLimited = false;
+
+                        if (!isPro && (updates.length + creates.length) > 150) {
+                            if (updates.length > 150) {
+                                updates = updates.slice(0, 150);
+                                creates = [];
+                            } else {
+                                creates = creates.slice(0, 150 - updates.length);
+                            }
+                            isLimited = true;
+                        }
+
+                        if (!updates.length && !creates.length) {
+                            setStatus({ type: 'info', text: 'No rows to process.' });
+                            return;
+                        }
+
+                        // Process Updates with Instant Feedback (Chunked Sidebar Loop)
+                        if (updates.length > 0) {
+                            let updatedCount = 0;
+                            let cellsUpdated = 0;
+                            const CHUNK_SIZE = 100;
+
+                            const totalCells = updates.reduce((sum, u) => sum + Object.keys(u.fields || {}).length, 0);
+                            setStatus({ type: 'info', text: `calculating cells that neeed to be updated: ${totalCells}` });
+
+                            const processUpdateChunks = (allUpdates, startIndex = 0) => {
+                                const chunk = allUpdates.slice(startIndex, startIndex + CHUNK_SIZE);
+                                if (chunk.length === 0) {
+                                    const cellText = cellsUpdated ? ` (${cellsUpdated} cells/fields)` : '';
+                                    if (isLimited) {
+                                        setStatus({
+                                            type: 'error',
+                                            text: 'Free version allows 150 updates. Please upgrade to Pro.',
+                                            action: { label: 'Upgrade to Pro', onClick: () => setActiveTab('license') }
+                                        });
+                                    } else {
+                                        setStatus({ type: 'success', text: `Updated ${updatedCount} issues${cellText}.` });
+                                    }
+                                    return;
+                                }
+
+                                const endIdx = Math.min(startIndex + CHUNK_SIZE, allUpdates.length);
+                                const progressMsg = `Updating Batch ${Math.floor(startIndex / CHUNK_SIZE) + 1}: ${startIndex + 1} to ${endIdx} of ${allUpdates.length}...`;
+                                setStatus({ type: 'info', text: progressMsg });
+
+                                google.script.run
+                                    .withSuccessHandler(res => {
+                                        if (res.success) {
+                                            updatedCount += (res.count || 0);
+                                            cellsUpdated += (res.cellsUpdated || 0);
+                                            processUpdateChunks(allUpdates, startIndex + CHUNK_SIZE);
+                                        } else {
+                                            setStatus({ type: 'error', text: 'Update error: ' + (res.error || 'Unknown error') });
+                                        }
+                                    })
+                                    .withFailureHandler(err => setStatus({ type: 'error', text: 'Batch failed: ' + err.message }))
+                                    .updateJiraIssuesDirect({ ...config, isPro }, chunk, { sheetName: data.sheetName });
+                            };
+
+                            setTimeout(() => {
+                                processUpdateChunks(updates, 0);
+                            }, 1200);
+                        }
+
+                        // Process Creates
+                        if (creates.length > 0) {
+                            setStatus({ type: 'info', text: `Creating ${creates.length} issues...` });
+                            google.script.run
+                                .withSuccessHandler(res => {
+                                    // Format success message: "Created 5 issues: 3 Bug, 2 Story"
+                                    const typeSummary = Object.entries(res.types || {})
+                                        .map(([type, count]) => `${count} ${type}`)
+                                        .join(', ');
+                                    const msg = `Created ${res.count} issues${typeSummary ? ': ' + typeSummary : ''}`;
+
+                                    setStatus({ type: 'success', text: msg });
+                                    handleRefresh();
+                                })
+                                .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                                .createJiraIssues(config, creates);
+                        }
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .getSelectedRowsData();
+            };
+
+            const handleCreate = () => {
+                if (!config.projectKey) {
+                    setStatus({ type: 'error', text: 'Please select project name' });
+                    return;
+                }
+                const isPro = license?.allowed && license?.plan !== 'free';
+                setStatus({ type: 'info', text: 'Checking rows to create...' });
+                google.script.run
+                    .withSuccessHandler((data) => {
+                        let creates = data.creates || [];
+                        let isLimited = false;
+
+                        if (!isPro && creates.length > 150) {
+                            creates = creates.slice(0, 150);
+                            isLimited = true;
+                        }
+
+                        if (!creates.length) {
+                            setStatus({ type: 'info', text: 'No new rows to create. Select rows without a Jira key.' });
+                            return;
+                        }
+
+                        setStatus({ type: 'info', text: `Creating ${creates.length} issues...` });
+                        google.script.run
+                            .withSuccessHandler(res => {
+                                const typeSummary = Object.entries(res.types || {})
+                                    .map(([type, count]) => `${count} ${type}`)
+                                    .join(', ');
+                                const msg = `Created ${res.count} issues${typeSummary ? ': ' + typeSummary : ''}`;
+
+                                if (isLimited) {
+                                    setStatus({
+                                        type: 'error',
+                                        text: 'Free version allows 150 creations. Please upgrade to Pro.',
+                                        action: { label: 'Upgrade to Pro', onClick: () => setActiveTab('license') }
+                                    });
+                                } else {
+                                    setStatus({ type: 'success', text: msg });
+                                }
+                                handleRefresh();
+                            })
+                            .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                            .createJiraIssues({ ...config, isPro }, creates);
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .getSelectedRowsData();
+            };
+
+            const handleResetIssues = () => {
+                if (!confirm('Reset all highlighted issues to default white?')) return;
+
+                setStatus({ type: 'info', text: 'Resetting colors...' });
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Issue colors reset' });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .resetIssueColors();
+            };
+
+            const handleGenerateDashboard = () => {
+                if (dashboardColumns.length === 0) {
+                    setStatus({ type: 'error', text: 'Please select at least one column to visualize.' });
+                    return;
+                }
+                setStatus({ type: 'info', text: 'Generating Dashboard...' });
+                google.script.run
+                    .withSuccessHandler((result) => {
+                        let msg = 'Dashboard created!';
+                        if (result.skipped && result.skipped.length > 0) {
+                            msg += ` Skipped: ${result.skipped.join(', ')} (not suitable for charts)`;
+                        }
+                        setStatus({ type: 'success', text: msg });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .generateDashboard(dashboardType, dashboardColumns);
+            };
+
+            // NEW: Trend Logic
+            const [trendConfig, setTrendConfig] = useState({ type: 'created', period: 'weekly' });
+
+            const handleGenerateTrend = () => {
+                setStatus({ type: 'info', text: `Generating ${trendConfig.period} trend for ${trendConfig.type} issues...` });
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Trend Chart Created!' });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .generateTrendChart(trendConfig.type, trendConfig.period);
+            };
+
+            const handleGenerateRoadmap = () => {
+                setStatus({ type: 'info', text: 'Generating Roadmap...' });
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Roadmap Created (See "Jira Roadmap" sheet)' });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .generateRoadmap(roadmapConfig);
+            };
+
+            const handleGenerateCapacity = () => {
+                if (!capacityConfig.estimateCol || !capacityConfig.assigneeCol || !capacityConfig.dueDateCol) {
+                    setStatus({ type: 'error', text: 'Please select all required columns (Estimation, Assignee, and Due Date).' });
+                    return;
+                }
+
+                setStatus({ type: 'info', text: 'Generating Capacity Plan...' });
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Capacity Plan Created (See "Jira Capacity Plan" sheet)' });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .generateCapacityPlan(capacityConfig);
+            };
+
+            const handleGeneratePivot = () => {
+                setStatus({ type: 'info', text: 'Generating Pivot Table...' });
+                google.script.run
+                    .withSuccessHandler(() => {
+                        setStatus({ type: 'success', text: 'Pivot Table Created (See "Jira Pivot" sheet)' });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .generatePivotTable(pivotConfig);
+            };
+
+            const handleDeleteIssues = () => {
+                setStatus({ type: 'info', text: 'Checking selection...' });
+                google.script.run
+                    .withSuccessHandler((count) => {
+                        if (count === 0) {
+                            setStatus({ type: 'error', text: 'No issue keys found in selection.' });
+                            return;
+                        }
+
+                        if (confirm(`Are you sure you want to delete ${count} issues from Jira?\nThis action cannot be undone.`)) {
+                            setStatus({ type: 'info', text: `Deleting ${count} items...` });
+                            google.script.run
+                                .withSuccessHandler((res) => {
+                                    let msg = `Deleted: ${res.deleted}. Failed: ${res.failed}.`;
+                                    if (res.failed > 0 && res.errors.length > 0) {
+                                        msg += ` Error: ${res.errors[0]}`;
+                                    }
+                                    setStatus({
+                                        type: res.failed === 0 ? 'success' : 'warning',
+                                        text: msg
+                                    });
+                                })
+                                .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                                .deleteSelectedJiraIssues(config);
+                        } else {
+                            setStatus({ type: 'info', text: 'Deletion cancelled.' });
+                        }
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .getSelectedIssueCount(config);
+            };
+
+            const handleToggleSchedule = () => {
+                if (refreshMode === 'none') {
+                    setStatus({ type: 'info', text: 'Disabling auto-refresh...' });
+                    setIsIntervalRunning(false);
+                    google.script.run
+                        .withSuccessHandler(() => setStatus({ type: 'success', text: 'Auto-refresh disabled.' }))
+                        .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                        .disableScheduledRefresh();
+                } else {
+                    // Toggle client-side interval
+                    setIsIntervalRunning(!isIntervalRunning);
+                }
+            };
+
+            // Interval Timer Effect - Countdown based
+            useEffect(() => {
+                if (isIntervalRunning) {
+                    // Pause if refreshing
+                    if (isRefreshing) return;
+
+                    // Reset if cycle complete
+                    if (countdown <= 0) {
+                        setCountdown(intervalSeconds);
+                        return;
+                    }
+
+                    const timer = setInterval(() => {
+                        setCountdown(prev => {
+                            if (prev <= 1) {
+                                handleGlobalRefresh('Interval');
+                                return 0; // Hold at 0
+                            }
+                            return prev - 1;
+                        });
+                    }, 1000);
+                    return () => clearInterval(timer);
+                } else {
+                    setCountdown(0);
+                }
+            }, [isIntervalRunning, intervalSeconds, isRefreshing, countdown]);
+
+            // Load Fields when app starts or credentials available
+            useEffect(() => {
+                if (config.token && config.domain && availableFields.length === 0) {
+                    google.script.run
+                        .withSuccessHandler(setAvailableFields)
+                        .getJiraFields(config);
+                }
+            }, [config.token, config.domain]);
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [labelsData, activeTab]);
+
+
+
+            const handleSmartFetch = (ctxConfig, updateCtxFn, extraRequired = []) => {
+                const requiredCols = ['created', 'updated', 'resolutiondate', 'issuetype', ...extraRequired];
+                const current = (ctxConfig.columns || '').split(',').map(c => c.trim().toLowerCase());
+
+                // Identify missing columns
+                const missing = [];
+                requiredCols.forEach(req => {
+                    const reqLower = req.toLowerCase();
+                    // Check if already present
+                    if (!current.some(c => c.includes(reqLower))) {
+                        // Find matching field in availableFields if possible
+                        if (availableFields.length > 0) {
+                            const field = availableFields.find(f =>
+                                f.name.toLowerCase() === reqLower ||
+                                f.name.toLowerCase().includes(reqLower)
+                            );
+                            if (field && !current.some(c => c.includes(field.name.toLowerCase()))) {
+                                missing.push(field.name);
+                            } else if (!field) {
+                                // If not found in availableFields, just add the required name string if it's common
+                                if (['story points', 'timeoriginalestimate'].includes(reqLower)) {
+                                    missing.push(req);
+                                }
+                            }
+                        } else {
+                            missing.push(req);
+                        }
+                    }
+                });
+
+                let finalConfig = { ...config, ...ctxConfig };
+                // CRITICAL FIX: Do not let an empty 'jql' or 'columns' from ctxConfig overwrite 
+                // the active config if ctxConfig is in its initial/empty state.
+                if (!ctxConfig.jql && config.jql) {
+                    finalConfig.jql = config.jql;
+                }
+
+                if (missing.length > 0) {
+                    const uniqueMissing = [...new Set(missing)];
+                    const newCols = (ctxConfig.columns ? ctxConfig.columns + ', ' : '') + uniqueMissing.join(', ');
+                    updateCtxFn('columns', newCols);
+                    finalConfig.columns = newCols;
+                    setStatus({ type: 'info', text: `Adding missing columns: ${uniqueMissing.join(', ')}` });
+                    handleRefresh('SmartFetch', true, finalConfig);
+                    return true; // We triggered a refresh
+                } else {
+                    handleRefresh('Manual', false, finalConfig);
+                    return false;
+                }
+            };
+
+            const sectionTitles = {
+                config: { title: 'JIRA Configuration', icon: 'settings' },
+                issues: { title: 'JIRA Issues', icon: 'list' },
+                bulkCreate: { title: 'Bulk Create Issues', icon: 'plus-circle' },
+                dashboard: { title: 'Dashboards', icon: 'pie-chart' },
+                metrics: { title: 'Metrics', icon: 'line-chart' },
+                roadmap: { title: 'Roadmap Planning', icon: 'gantt-chart' },
+                capacity: { title: 'Capacity Planning', icon: 'users' },
+                labels: { title: 'Label Management', icon: 'tags' },
+                jqlUpdate: { title: 'JQL Bulk Update', icon: 'zap' },
+                pivot: { title: 'Pivot Table', icon: 'table' }
+            };
+
+            const currentSection = sectionTitles[activeTab] || sectionTitles.config;
+
+            return (
+                <div className="space-y-4">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-2 border-b">
+                        <div className="flex items-center space-x-2">
+                            <i data-lucide={currentSection.icon} className="h-5 w-5 text-blue-600"></i>
+                            <h1 className="text-lg font-bold tracking-tight">{currentSection.title}</h1>
+                            <div className="flex items-center gap-2">
+                                <div
+                                    onClick={() => setActiveTab('license')}
+                                    className={cn(
+                                        "px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-all hover:scale-105 active:scale-95",
+                                        license.allowed ? "bg-green-100 text-green-700 border border-green-200" : "bg-zinc-100 text-zinc-500 border border-zinc-200"
+                                    )}
+                                >
+                                    {license.plan.toUpperCase()}
+                                </div>
+                            </div>
+                        </div>
+                        {activeTab !== 'issues' && activeTab !== 'config' && activeTab !== 'license' && (
+                            <button
+                                onClick={() => setActiveTab('issues')}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/5 hover:bg-primary/10 text-primary transition-all group border border-primary/20"
+                                title="Back to Issues"
+                            >
+                                <i data-lucide="arrow-left" className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform"></i>
+                                <span className="text-xs font-semibold">Back to Issues</span>
+                            </button>
+                        )}
+                    </div>
+
+
+                    {/* CONFIGURATION TAB */}
+                    {activeTab === 'config' && (
+                        <div className="space-y-4 animation-fade-in">
+
+
+
+                            <div className="space-y-2">
+                                <Label>Jira Domain</Label>
+                                <Input
+                                    placeholder="company.atlassian.net"
+                                    value={config.domain}
+                                    onChange={e => updateConfig('domain', e.target.value)}
+                                />
+                                <p className="text-[10px] text-muted-foreground">The part before .atlassian.net usually.</p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Email</Label>
+                                <Input
+                                    placeholder="user@example.com"
+                                    value={config.email}
+                                    onChange={e => updateConfig('email', e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>API Token</Label>
+                                <div style={{ position: 'relative' }}>
+                                    <Input
+                                        type={showToken ? 'text' : 'password'}
+                                        placeholder="••••••••••••"
+                                        value={config.token}
+                                        onChange={e => updateConfig('token', e.target.value)}
+                                        style={{ paddingRight: '36px' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowToken(!showToken)}
+                                        style={{
+                                            position: 'absolute',
+                                            right: '8px',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            background: 'none',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            padding: '4px',
+                                            fontSize: '14px',
+                                            color: '#6b7280'
+                                        }}
+                                        title={showToken ? 'Hide token' : 'Show token'}
+                                    >
+                                        {showToken ? '🙈' : '👁️'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="border-t pt-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <i data-lucide="shield" className="w-4 h-4 text-orange-500"></i>
+                                    <Label className="text-sm font-semibold">High-Speed Proxy (Bypass Quotas)</Label>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground italic">Uses a global Cloudflare proxy to avoid Google Apps Script runtime limitations (Pro Feature)</p>
+
+                                <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-primary transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={config.useCloudflare || false}
+                                        onChange={e => {
+                                            const isPro = license?.allowed && license?.plan !== 'free';
+                                            if (e.target.checked && !isPro) {
+                                                setStatus({
+                                                    type: 'error',
+                                                    text: 'High-speed proxy is a Pro feature.',
+                                                    action: {
+                                                        label: 'Upgrade Now',
+                                                        onClick: () => setActiveTab('license')
+                                                    }
+                                                });
+                                                return;
+                                            }
+                                            updateConfig('useCloudflare', e.target.checked);
+                                        }}
+                                        className="rounded border-gray-300 text-primary focus:ring-primary"
+                                    />
+                                    Enable Proxy Support
+                                </label>
+                            </div>
+
+                            <div className="pt-2 space-y-2">
+                                <Button className="w-full" variant="secondary" onClick={handleSave} disabled={loading}>
+                                    {loading ? "Saving..." : "Save Configuration"}
+                                </Button>
+                                <Button
+                                    className={cn(
+                                        "w-full transition-all",
+                                        connectionTest?.success && "bg-green-600 hover:bg-green-700 text-white border-green-600"
+                                    )}
+                                    variant={connectionTest?.success ? "default" : "outline"}
+                                    onClick={handleTestConnection}
+                                    disabled={loading}
+                                >
+                                    <i data-lucide={connectionTest?.success ? "check-circle" : "shield-check"} className={cn("w-4 h-4 mr-2", connectionTest?.success ? "text-white" : "text-orange-500")}></i>
+                                    {connectionTest?.success ? "Connection Verified" : "Test Connection"}
+                                </Button>
+                                {connectionTest && connectionTest.msg && (
+                                    <p className={cn("text-[10px] mt-1 text-center font-medium", connectionTest.success ? "text-green-600" : "text-red-600")}>
+                                        {connectionTest.msg}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="border-t pt-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <i data-lucide="refresh-cw" className="w-4 h-4 text-primary"></i>
+                                    <Label className="text-sm font-semibold">Global Auto-Refresh</Label>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground italic">Applies to all sheets with Jira data while sidebar is open.</p>
+
+                                <div className="flex gap-4 mb-2">
+                                    <label className="flex items-center text-sm cursor-pointer hover:text-primary transition-colors">
+                                        <input type="radio" name="refreshMode" className="mr-2 accent-primary"
+                                            checked={refreshMode === 'none'}
+                                            onChange={() => setRefreshMode('none')} />
+                                        Off
+                                    </label>
+                                    <label className="flex items-center text-sm cursor-pointer hover:text-primary transition-colors">
+                                        <input type="radio" name="refreshMode" className="mr-2 accent-primary"
+                                            checked={refreshMode === 'interval'}
+                                            onChange={() => setRefreshMode('interval')} />
+                                        Interval
+                                    </label>
+                                </div>
+
+                                {refreshMode !== 'none' && (
+                                    <div className="space-y-3 p-3 bg-muted/30 rounded-lg border border-border animate-in fade-in slide-in-from-top-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs w-20">Every</span>
+                                            <Input type="number" className="w-full text-center font-mono h-8 text-xs" min="5"
+                                                value={isIntervalRunning ? countdown : intervalSeconds}
+                                                onChange={(e) => setIntervalSeconds(parseInt(e.target.value) || 30)}
+                                                disabled={isIntervalRunning}
+                                            />
+                                            <span className="text-xs w-20">seconds</span>
+                                        </div>
+                                        <Button
+                                            variant={isIntervalRunning ? "destructive" : "secondary"}
+                                            className="w-full h-8 text-xs"
+                                            onClick={handleToggleSchedule}
+                                        >
+                                            {isIntervalRunning ? (
+                                                <><i data-lucide="pause" className="w-3 h-3 mr-2"></i>Stop Global Sync</>
+                                            ) : (
+                                                <><i data-lucide="play" className="w-3 h-3 mr-2"></i>Start Global Sync</>
+                                            )}
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )
+                    }
+
+                    {/* ISSUES TAB */}
+                    {
+                        activeTab === 'issues' && (
+                            <div className="space-y-4 animation-fade-in">
+                                <JiraDataControl
+                                    config={config}
+                                    updateConfig={updateConfig}
+                                    jqlStats={jqlStats}
+                                    filters={filters}
+                                    availableFields={availableFields}
+                                    onFetch={() => handleSmartFetch(config, updateConfig)}
+                                    loading={isRefreshing}
+                                >
+                                    <div className="space-y-4 pt-4 border-t mt-4">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <Button className="text-xs" variant="outline" onClick={handleUpdate}>
+                                                <i data-lucide="pencil" className="w-3 h-3 mr-1"></i>
+                                                Update Issues
+                                            </Button>
+                                            <Button className="text-xs" variant="destructive" onClick={handleDeleteIssues}>
+                                                <i data-lucide="trash-2" className="w-3 h-3 mr-1"></i>
+                                                Delete Issues
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </JiraDataControl>
+                            </div>
+                        )
+                    }
+
+                    {/* BULK CREATE TAB */}
+                    {
+                        activeTab === 'bulkCreate' && (
+                            <div className="space-y-4 animation-fade-in">
+                                <div className="text-center py-4 border-b">
+                                    <i data-lucide="plus-circle" className="w-12 h-12 mx-auto text-cyan-500 mb-2"></i>
+                                    <h2 className="text-lg font-bold">Bulk Create Issues</h2>
+                                    <p className="text-sm text-muted-foreground">Turn sheet rows into Jira tickets</p>
+                                </div>
+
+                                <div className="bg-blue-50 p-3 rounded text-xs text-blue-800 border border-blue-200">
+                                    <strong>How to use:</strong>
+                                    <ul className="list-disc ml-4 mt-1 space-y-1">
+                                        <li>Add new rows to your spreadsheet.</li>
+                                        <li>Leave the <strong>Key</strong> column blank.</li>
+                                        <li>Fill in <strong>Summary</strong> and other required fields.</li>
+                                        <li>Select the target project below and click Create.</li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-4 pt-4 border-t mt-4">
+                                    <div className="space-y-2">
+                                        <Label>Target Project</Label>
+                                        <select
+                                            className={cn(
+                                                "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+                                                !config.projectKey && "border-red-500"
+                                            )}
+                                            value={config.projectKey || ""}
+                                            onChange={(e) => updateConfig('projectKey', e.target.value)}
+                                        >
+                                            <option value="" disabled>Select a project...</option>
+                                            {projects.map(p => (
+                                                <option key={p.id} value={p.key}>{p.name} ({p.key})</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <Button className="w-full text-sm" variant="secondary" onClick={handleCreate}>
+                                        <i data-lucide="plus" className="w-4 h-4 mr-2"></i>
+                                        Create Issues from New Rows
+                                    </Button>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {/* Quick Navigation Grid */}
+                    {activeTab === 'issues' && (
+                        <div className="pt-4 mt-6 border-t space-y-3">
+                            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Features</Label>
+                            <div className="grid grid-cols-5 gap-2">
+                                <button onClick={() => setActiveTab('dashboard')} className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-accent transition-colors gap-1 group" title="Dashboard">
+                                    <div className="p-2 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-600 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="pie-chart" className="w-4 h-4"></i>
+                                    </div>
+                                    <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground">Dash</span>
+                                </button>
+                                <button onClick={() => setActiveTab('metrics')} className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-accent transition-colors gap-1 group" title="Metrics">
+                                    <div className="p-2 rounded-md bg-purple-100 dark:bg-purple-900/30 text-purple-600 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="line-chart" className="w-4 h-4"></i>
+                                    </div>
+                                    <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground">Metrics</span>
+                                </button>
+                                <button onClick={() => setActiveTab('roadmap')} className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-accent transition-colors gap-1 group" title="Roadmap">
+                                    <div className="p-2 rounded-md bg-green-100 dark:bg-green-900/30 text-green-600 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="gantt-chart" className="w-4 h-4"></i>
+                                    </div>
+                                    <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground">Plan</span>
+                                </button>
+                                <button onClick={() => setActiveTab('capacity')} className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-accent transition-colors gap-1 group" title="Capacity">
+                                    <div className="p-2 rounded-md bg-orange-100 dark:bg-orange-900/30 text-orange-600 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="users" className="w-4 h-4"></i>
+                                    </div>
+                                    <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground">Cap</span>
+                                </button>
+                                <button onClick={() => setActiveTab('pivot')} className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-accent transition-colors gap-1 group" title="Pivot Table">
+                                    <div className="p-2 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="table" className="w-4 h-4"></i>
+                                    </div>
+                                    <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground">Pivot</span>
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-5 gap-2">
+                                <button onClick={() => setActiveTab('issues')} className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-accent transition-colors gap-1 group" title="Jira Issues">
+                                    <div className="p-2 rounded-md bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="list" className="w-4 h-4"></i>
+                                    </div>
+                                    <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground">Issues</span>
+                                </button>
+                                <button onClick={() => setActiveTab('labels')} className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-accent transition-colors gap-1 group" title="Label Management">
+                                    <div className="p-2 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-600 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="tags" className="w-4 h-4"></i>
+                                    </div>
+                                    <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground">Labels</span>
+                                </button>
+                                <button onClick={() => setActiveTab('jqlUpdate')} className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-accent transition-colors gap-1 group" title="JQL Bulk Update">
+                                    <div className="p-2 rounded-md bg-rose-100 dark:bg-rose-900/30 text-rose-600 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="zap" className="w-4 h-4"></i>
+                                    </div>
+                                    <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground">JQLU</span>
+                                </button>
+                                <button onClick={() => setActiveTab('bulkCreate')} className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-accent transition-colors gap-1 group" title="Bulk Create">
+                                    <div className="p-2 rounded-md bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="plus-circle" className="w-4 h-4"></i>
+                                    </div>
+                                    <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground">Create</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* DASHBOARD TAB */}
+                    {
+                        activeTab === 'dashboard' && (
+                            <div className="space-y-4 animation-fade-in">
+                                <div className="text-center py-4 border-t mt-4">
+                                    <i data-lucide="pie-chart" className="w-12 h-12 mx-auto text-blue-500 mb-2"></i>
+                                    <h2 className="text-lg font-bold">Charts & Visuals</h2>
+                                    <p className="text-sm text-muted-foreground">Generate visual charts from your Jira data</p>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label>Select Columns to Visualize</Label>
+                                        {sheetHeaders.length === 0 ? (
+                                            <div className="p-4 text-center text-sm text-muted-foreground border rounded-md">
+                                                <p>No columns found. Fetch Jira data first.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-2 gap-1 p-2 border rounded-md bg-muted/30 max-h-[400px] overflow-y-auto">
+                                                {sheetHeaders.filter(h => h !== 'key' && h !== 'Key').map(col => (
+                                                    <label key={col} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-accent/50 p-1 rounded">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={dashboardColumns.some(c => c.toLowerCase() === col.toLowerCase())}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setDashboardColumns(prev => [...prev, col]);
+                                                                } else {
+                                                                    setDashboardColumns(prev => prev.filter(c => c.toLowerCase() !== col.toLowerCase()));
+                                                                }
+                                                            }}
+                                                            className="rounded"
+                                                        />
+                                                        <span className="truncate" title={col}>
+                                                            {col}
+                                                        </span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <p className="text-[10px] text-muted-foreground">
+                                            Selected: {dashboardColumns.length} columns
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label>Chart Type</Label>
+                                        <select
+                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                                            value={dashboardType}
+                                            onChange={(e) => setDashboardType(e.target.value)}
+                                        >
+                                            <option value="pie">Pie Chart</option>
+                                            <option value="donut">Donut Chart</option>
+                                            <option value="bar">Bar Chart</option>
+                                        </select>
+                                    </div>
+
+                                    <Button className="w-full" variant="secondary" onClick={handleGenerateDashboard}>
+                                        <i data-lucide="pie-chart" className="w-4 h-4 mr-2"></i>
+                                        Generate Dashboard
+                                    </Button>
+
+                                    <Alert type="info">
+                                        Charts are rendered to the right of your data. Columns with too many unique values may be skipped.
+                                    </Alert>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {/* METRICS TAB */}
+                    {
+                        activeTab === 'metrics' && (
+                            <div className="space-y-4 animation-fade-in">
+
+                                <div className="border-t pt-4 mt-4 space-y-4">
+                                    <div className="text-center">
+                                        <h3 className="font-bold text-md">Issue Trends</h3>
+                                        <p className="text-xs text-muted-foreground">Visualize issue volume over time</p>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="space-y-1">
+                                            <Label>Metric</Label>
+                                            <select
+                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm"
+                                                value={trendConfig.type}
+                                                onChange={(e) => setTrendConfig({ ...trendConfig, type: e.target.value })}
+                                            >
+                                                <option value="created">Created</option>
+                                                <option value="resolved">Resolved</option>
+                                                <option value="updated">Updated</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label>Period</Label>
+                                            <select
+                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm"
+                                                value={trendConfig.period}
+                                                onChange={(e) => setTrendConfig({ ...trendConfig, period: e.target.value })}
+                                            >
+                                                <option value="daily">Daily (30 Days)</option>
+                                                <option value="weekly">Weekly (12 Weeks)</option>
+                                                <option value="monthly">Monthly (12 Months)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <Button className="w-full" variant="secondary" onClick={handleGenerateTrend}>
+                                        <i data-lucide="line-chart" className="w-4 h-4 mr-2"></i>
+                                        Generate Trend Chart
+                                    </Button>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {/* ROADMAP TAB */}
+                    {
+                        activeTab === 'roadmap' && (
+                            <div className="space-y-4 animation-fade-in">
+
+                                <div className="text-center py-4 border-t mt-4">
+                                    <i data-lucide="gantt-chart" className="w-12 h-12 mx-auto text-green-500 mb-2"></i>
+                                    <h2 className="text-lg font-bold">Roadmap Planning</h2>
+                                    <p className="text-sm text-muted-foreground">Visualize your issues on a timeline</p>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="space-y-3 p-3 bg-muted/20 rounded-lg border border-border">
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Start Date Column <span className="text-red-500">*</span></Label>
+                                            <select
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:ring-1 focus:ring-primary"
+                                                value={roadmapConfig.startDateCol}
+                                                onChange={(e) => setRoadmapConfig({ ...roadmapConfig, startDateCol: e.target.value })}
+                                            >
+                                                <option value="">Select Start Column...</option>
+                                                {sheetHeaders.map(h => (
+                                                    <option key={h} value={h}>{h}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">End Date Column <span className="text-red-500">*</span></Label>
+                                            <select
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:ring-1 focus:ring-primary"
+                                                value={roadmapConfig.endDateCol}
+                                                onChange={(e) => setRoadmapConfig({ ...roadmapConfig, endDateCol: e.target.value })}
+                                            >
+                                                <option value="">Select End Column...</option>
+                                                {sheetHeaders.map(h => (
+                                                    <option key={h} value={h}>{h}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground">Pick columns containing dates to position issues on the timeline.</p>
+                                </div>
+
+                                <Button
+                                    className="w-full"
+                                    variant="secondary"
+                                    onClick={handleGenerateRoadmap}
+                                    disabled={!roadmapConfig.startDateCol || !roadmapConfig.endDateCol}
+                                >
+                                    <i data-lucide="gantt-chart" className="w-4 h-4 mr-2"></i>
+                                    Generate Roadmap
+                                </Button>
+
+                                <Alert type="info">
+                                    Creates a "Jira Roadmap" sheet with a Gantt-style timeline showing:
+                                    <ul className="list-disc ml-4 mt-1 text-xs">
+                                        <li>Issues positioned by your selected {roadmapConfig.startDateCol} and {roadmapConfig.endDateCol}</li>
+                                        <li>Color-coded by status (To Do, In Progress, Done)</li>
+                                        <li>Today marker and week labels</li>
+                                    </ul>
+                                </Alert>
+                            </div>
+                        )
+                    }
+
+                    {/* LABELS TAB */}
+                    {
+                        activeTab === 'labels' && (
+                            <div className="space-y-4 animation-fade-in">
+                                <div className="text-center py-4 border-b">
+                                    <i data-lucide="tags" className="w-12 h-12 mx-auto text-blue-500 mb-2"></i>
+                                    <h2 className="text-lg font-bold">Label Management</h2>
+                                    <p className="text-sm text-muted-foreground">Analyze and cleanup labels</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <Button className="w-full" variant="secondary" onClick={() => {
+                                        setLoading(true);
+                                        setStatus({ type: 'info', text: 'Fetching label statistics...' });
+                                        google.script.run
+                                            .withSuccessHandler((data) => {
+                                                setLoading(false);
+                                                setLabelsData(data); // Expecting { "label1": 10, "label2": 5 }
+                                                setStatus({ type: 'success', text: `Loaded ${Object.keys(data).length} labels.` });
+                                            })
+                                            .withFailureHandler((err) => {
+                                                setLoading(false);
+                                                setStatus({ type: 'error', text: 'Failed to load labels: ' + err.message });
+                                            })
+                                            .getLabelStats(config);
+                                    }} disabled={loading}>
+                                        {loading ? 'Busy...' : 'Load Label Statistics'}
+                                    </Button>
+
+                                    {labelsData && Object.keys(labelsData).length > 0 && (
+                                        <div className="space-y-2 mt-4">
+                                            <Label>Found Labels ({Object.keys(labelsData).length})</Label>
+                                            <div className="border rounded-md divide-y max-h-[600px] overflow-y-auto">
+                                                {Object.entries(labelsData).sort((a, b) => b[1] - a[1]).map(([label, count]) => (
+                                                    <div key={label} className="p-2 flex justify-between items-center hover:bg-slate-50 text-xs">
+                                                        <div className="flex items-center space-x-2">
+                                                            <span className="font-mono bg-slate-100 px-1 rounded">{label}</span>
+                                                            <span
+                                                                className="text-blue-600 cursor-pointer hover:underline"
+                                                                title="Click to view issues in sheet"
+                                                                onClick={() => {
+                                                                    const newJql = `labels = "${label}"`;
+                                                                    const newConfig = { ...config, jql: newJql, targetSheetName: 'label-management' };
+                                                                    updateConfig('jql', newJql);
+                                                                    setActiveTab('issues');
+                                                                    handleRefresh('Manual', false, newConfig);
+                                                                    setStatus({ type: 'info', text: `Fetching issues for label: ${label} to 'label-management' sheet` });
+                                                                }}
+                                                            >
+                                                                ({count} issues)
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex gap-1">
+                                                            <button
+                                                                className="text-blue-500 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
+                                                                title="Rename this label"
+                                                                onClick={() => {
+                                                                    const newName = prompt(`Enter new name for label "${label}":`, label);
+                                                                    if (newName && newName.trim() !== "" && newName.trim() !== label) {
+                                                                        const cleanedNewName = newName.trim();
+                                                                        setLoading(true);
+                                                                        setStatus({ type: 'info', text: `Renaming label "${label}" to "${cleanedNewName}"...` });
+                                                                        google.script.run
+                                                                            .withSuccessHandler((res) => {
+                                                                                setLoading(false);
+                                                                                if (res.success) {
+                                                                                    // Update local state: remove old, add new
+                                                                                    const newData = { ...labelsData };
+                                                                                    const oldCount = newData[label];
+                                                                                    delete newData[label];
+                                                                                    newData[cleanedNewName] = (newData[cleanedNewName] || 0) + oldCount;
+                                                                                    setLabelsData(newData);
+                                                                                    setStatus({ type: 'success', text: `Renamed label to "${cleanedNewName}" across ${res.updated} issues.` });
+                                                                                } else {
+                                                                                    setStatus({ type: 'error', text: `Failed: ${res.error}` });
+                                                                                }
+                                                                            })
+                                                                            .withFailureHandler((err) => {
+                                                                                setLoading(false);
+                                                                                setStatus({ type: 'error', text: 'Error: ' + err.message });
+                                                                            })
+                                                                            .renameLabelInIssues(config, label, cleanedNewName);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <span className="text-xs"><i data-lucide="edit-2" className="w-3.5 h-3.5"></i></span>
+                                                            </button>
+                                                            <button
+                                                                className="text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50"
+                                                                title="Remove this label from all issues"
+                                                                onClick={() => {
+                                                                    if (confirm(`Are you sure you want to remove label "${label}" from ${count} issues? This cannot be undone.`)) {
+                                                                        setLoading(true);
+                                                                        setStatus({ type: 'info', text: `Removing label "${label}"...` });
+                                                                        google.script.run
+                                                                            .withSuccessHandler((res) => {
+                                                                                setLoading(false);
+                                                                                if (res.success) {
+                                                                                    // Remove from local state
+                                                                                    const newData = { ...labelsData };
+                                                                                    delete newData[label];
+                                                                                    setLabelsData(newData);
+                                                                                    setStatus({ type: 'success', text: `Removed label "${label}" from ${res.updated} issues.` });
+                                                                                } else {
+                                                                                    setStatus({ type: 'error', text: `Failed: ${res.error}` });
+                                                                                }
+                                                                            })
+                                                                            .withFailureHandler((err) => {
+                                                                                setLoading(false);
+                                                                                setStatus({ type: 'error', text: 'Error: ' + err.message });
+                                                                            })
+                                                                            .removeLabelFromIssues(config, label);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <span className="text-xs"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {labelsData && Object.keys(labelsData).length === 0 && (
+                                        <div className="text-center text-xs text-muted-foreground py-4">
+                                            No labels found. Click load to fetch.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {/* CAPACITY TAB */}
+                    {
+                        activeTab === 'capacity' && (
+                            <div className="space-y-4 animation-fade-in">
+
+                                <div className="text-center py-4 border-t mt-4">
+                                    <i data-lucide="users" className="w-12 h-12 mx-auto text-purple-500 mb-2"></i>
+                                    <h2 className="text-lg font-bold">Capacity Planning</h2>
+                                    <p className="text-sm text-muted-foreground">Team workload & availability analysis</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <Label>Estimation Type</Label>
+                                        <select
+                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                                            value={capacityConfig.estimationType}
+                                            onChange={(e) => setCapacityConfig({ ...capacityConfig, estimationType: e.target.value })}
+                                        >
+                                            <option value="storypoints">Story Points</option>
+                                            <option value="hours">Hours (Time Estimate)</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-3 p-3 bg-muted/20 rounded-lg border border-border">
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">
+                                                {capacityConfig.estimationType === 'storypoints' ? 'Story Points Column' : 'Hours Column'}
+                                                <span className="text-red-500">*</span>
+                                            </Label>
+                                            <select
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:ring-1 focus:ring-primary"
+                                                value={capacityConfig.estimateCol}
+                                                onChange={(e) => setCapacityConfig({ ...capacityConfig, estimateCol: e.target.value })}
+                                            >
+                                                <option value="">Select Estimate Column...</option>
+                                                {sheetHeaders.map(h => (
+                                                    <option key={h} value={h}>{h}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Assignee Column <span className="text-red-500">*</span></Label>
+                                            <select
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:ring-1 focus:ring-primary"
+                                                value={capacityConfig.assigneeCol}
+                                                onChange={(e) => setCapacityConfig({ ...capacityConfig, assigneeCol: e.target.value })}
+                                            >
+                                                <option value="">Select Assignee Column...</option>
+                                                {sheetHeaders.map(h => (
+                                                    <option key={h} value={h}>{h}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Start Date Column (Optional)</Label>
+                                            <select
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:ring-1 focus:ring-primary"
+                                                value={capacityConfig.startDateCol}
+                                                onChange={(e) => setCapacityConfig({ ...capacityConfig, startDateCol: e.target.value })}
+                                            >
+                                                <option value="">(Optional) No Spreading...</option>
+                                                {sheetHeaders.map(h => (
+                                                    <option key={h} value={h}>{h}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Due Date Column <span className="text-red-500">*</span></Label>
+                                            <select
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:ring-1 focus:ring-primary"
+                                                value={capacityConfig.dueDateCol}
+                                                onChange={(e) => setCapacityConfig({ ...capacityConfig, dueDateCol: e.target.value })}
+                                            >
+                                                <option value="">Select Due Date Column...</option>
+                                                {sheetHeaders.map(h => (
+                                                    <option key={h} value={h}>{h}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    {capacityConfig.estimationType === 'storypoints' && (
+                                        <div className="space-y-1">
+                                            <Label>Hours per Story Point</Label>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                value={capacityConfig.hoursPerPoint}
+                                                onChange={(e) => setCapacityConfig({ ...capacityConfig, hoursPerPoint: parseInt(e.target.value) || 1 })}
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="space-y-1">
+                                            <Label>Hours/Week</Label>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                max="168"
+                                                value={capacityConfig.hoursPerWeek}
+                                                onChange={(e) => setCapacityConfig({ ...capacityConfig, hoursPerWeek: parseInt(e.target.value) || 40 })}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label>Capacity %</Label>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                max="100"
+                                                value={capacityConfig.capacityPercent}
+                                                onChange={(e) => setCapacityConfig({ ...capacityConfig, capacityPercent: parseInt(e.target.value) || 80 })}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <Label>Holidays (YYYY-MM-DD, comma sep)</Label>
+                                        <Textarea
+                                            className="min-h-[60px]"
+                                            value={capacityConfig.holidays}
+                                            onChange={(e) => setCapacityConfig({ ...capacityConfig, holidays: e.target.value })}
+                                            placeholder="2023-12-25, 2024-01-01"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label>Weeks Ahead</Label>
+                                        <Input
+                                            type="number"
+                                            min="1"
+                                            max="52"
+                                            value={capacityConfig.weeksAhead}
+                                            onChange={(e) => setCapacityConfig({ ...capacityConfig, weeksAhead: parseInt(e.target.value) || 8 })}
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2 pt-2 border-t">
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-xs font-semibold">Team Exclusions</Label>
+                                            <button
+                                                className="text-[10px] text-blue-500 hover:underline flex items-center gap-1"
+                                                onClick={() => {
+                                                    setLoading(true);
+                                                    google.script.run
+                                                        .withSuccessHandler((users) => {
+                                                            setLoading(false);
+                                                            setSheetAssignees(users);
+                                                            setStatus({ type: 'success', text: `Found ${users.length} users in sheet.` });
+                                                            // Ensure lucide icons are created for the new content
+                                                            if (window.lucide) window.lucide.createIcons();
+                                                        })
+                                                        .getAssigneesFromSheet();
+                                                }}
+                                            >
+                                                <i data-lucide="refresh-cw" className="w-2.5 h-2.5"></i>
+                                                Sync Users
+                                            </button>
+                                        </div>
+
+                                        {sheetAssignees.length > 0 ? (
+                                            <div className="max-h-[300px] overflow-y-auto border rounded p-2 space-y-1 bg-slate-50">
+                                                {sheetAssignees.map(user => (
+                                                    <div key={user} className="flex items-center space-x-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            id={`exclude-${user}`}
+                                                            checked={!capacityConfig.excludedUsers.includes(user)}
+                                                            onChange={(e) => {
+                                                                const isChecked = e.target.checked;
+                                                                let newExcluded = [...capacityConfig.excludedUsers];
+                                                                if (isChecked) {
+                                                                    newExcluded = newExcluded.filter(u => u !== user);
+                                                                } else {
+                                                                    if (!newExcluded.includes(user)) {
+                                                                        newExcluded.push(user);
+                                                                    }
+                                                                }
+                                                                setCapacityConfig({ ...capacityConfig, excludedUsers: newExcluded });
+                                                            }}
+                                                            className="h-3 w-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        />
+                                                        <label htmlFor={`exclude-${user}`} className="text-[11px] truncate cursor-pointer select-none">
+                                                            {user}
+                                                        </label>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-[10px] text-muted-foreground italic">Click "Sync Users" to see team members from recent sheet.</p>
+                                        )}
+                                        <p className="text-[10px] text-muted-foreground">Uncheck users to exclude them from calculations.</p>
+                                    </div>
+                                    <Button
+                                        className="w-full mt-4"
+                                        variant="secondary"
+                                        onClick={handleGenerateCapacity}
+                                        disabled={!capacityConfig.estimateCol || !capacityConfig.assigneeCol || !capacityConfig.dueDateCol}
+                                    >
+                                        <i data-lucide="users" className="w-4 h-4 mr-2"></i>
+                                        Generate Capacity Plan
+                                    </Button>
+                                </div>
+                            </div>
+                        )
+                    }
+
+
+                    {
+                        activeTab === 'jqlUpdate' && (
+                            <div className="space-y-4 animation-fade-in">
+                                <div className="text-center py-4 border-b">
+                                    <i data-lucide="pencil" className="w-12 h-12 mx-auto text-orange-500 mb-2"></i>
+                                    <h2 className="text-lg font-bold">Bulk Update Issues</h2>
+                                    <p className="text-sm text-muted-foreground">Apply updates via JQLU Syntax</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="bg-orange-50 p-3 rounded text-xs text-orange-800 border border-orange-200">
+                                        <strong>JQLU Syntax:</strong> UPDATE field=value WHERE jql_condition
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <Label>Command</Label>
+                                        <Textarea
+                                            id="update-command"
+                                            placeholder={"UPDATE summary='Fixed', priority='High' WHERE project='TEST' AND status='Open'"}
+                                            className="min-h-[100px] font-mono text-xs"
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                            Updates all issues matching the WHERE clause.
+                                            <br />Supports JSON payload as well.
+                                        </p>
+                                    </div>
+
+                                    <Button className="w-full bg-orange-600 hover:bg-orange-700" onClick={() => {
+                                        const command = document.getElementById('update-command').value;
+
+                                        if (!command || command.trim().length < 5) {
+                                            setStatus({ type: 'error', text: 'Please enter a valid command.' });
+                                            return;
+                                        }
+
+                                        // Validate syntax start
+                                        const isJqlu = command.trim().toUpperCase().startsWith('UPDATE');
+                                        const isJson = command.trim().startsWith('{');
+
+                                        if (!isJqlu && !isJson) {
+                                            setStatus({ type: 'error', text: 'Command must start with "UPDATE" or "{" (JSON).' });
+                                            return;
+                                        }
+
+                                        setLoading(true);
+                                        setStatus({ type: 'info', text: `Previewing update...` });
+
+                                        // 1. Preview first
+                                        google.script.run
+                                            .withSuccessHandler((previewRes) => {
+                                                if (previewRes.error) {
+                                                    setLoading(false);
+                                                    setStatus({ type: 'error', text: previewRes.error });
+                                                    return;
+                                                }
+
+                                                // 2. Confirm
+                                                if (confirm(`${previewRes.jql}\n\nwill update ${previewRes.count} records.\n\nAre you sure?`)) {
+                                                    setStatus({ type: 'info', text: `Executing bulk update...` });
+
+                                                    // 3. Execute
+                                                    google.script.run
+                                                        .withSuccessHandler((res) => {
+                                                            setLoading(false);
+                                                            setStatus({
+                                                                type: res.success ? 'success' : 'error',
+                                                                text: res.success ? `Successfully updated ${res.updated} issues.` : `Update failed: ${res.error}`
+                                                            });
+                                                        })
+                                                        .withFailureHandler((err) => {
+                                                            setLoading(false);
+                                                            setStatus({ type: 'error', text: 'Execution failed: ' + err.message });
+                                                        })
+                                                        .executeBulkUpdate(config, command);
+                                                } else {
+                                                    setLoading(false);
+                                                    setStatus({ type: 'info', text: 'Update cancelled.' });
+                                                }
+                                            })
+                                            .withFailureHandler((err) => {
+                                                setLoading(false);
+                                                setStatus({ type: 'error', text: 'Preview failed: ' + err.message });
+                                            })
+                                            .previewBulkUpdate(config, command);
+                                    }} disabled={isRefreshing}>
+                                        {isRefreshing ? 'Executing...' : 'Execute Update'}
+                                    </Button>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {/* PIVOT TAB */}
+                    {
+                        activeTab === 'pivot' && (
+                            <div className="space-y-4 animation-fade-in">
+                                <div className="text-center py-4">
+                                    <i data-lucide="table" className="w-12 h-12 mx-auto text-green-500 mb-2"></i>
+                                    <h2 className="text-lg font-bold">Interactive Pivot</h2>
+                                    <p className="text-sm text-muted-foreground">Analyze data by user, status, etc.</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <Label>Rows (Group By)</Label>
+                                        <select
+                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                                            value={pivotConfig.row}
+                                            onChange={(e) => setPivotConfig({ ...pivotConfig, row: e.target.value })}
+                                        >
+                                            <option value="assignee">Assignee</option>
+                                            <option value="status">Status</option>
+                                            <option value="priority">Priority</option>
+                                            <option value="issuetype">Issue Type</option>
+                                            <option value="sprint">Sprint</option>
+                                            <option value="project">Project</option>
+                                            <option value="resolution">Resolution</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label>Columns (Group By)</Label>
+                                        <select
+                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                                            value={pivotConfig.col}
+                                            onChange={(e) => setPivotConfig({ ...pivotConfig, col: e.target.value })}
+                                        >
+                                            <option value="none">None</option>
+                                            <option value="status">Status</option>
+                                            <option value="priority">Priority</option>
+                                            <option value="issuetype">Issue Type</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label>Values</Label>
+                                        <select
+                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                                            value={pivotConfig.val}
+                                            onChange={(e) => setPivotConfig({ ...pivotConfig, val: e.target.value })}
+                                        >
+                                            <option value="count">Issue Count</option>
+                                            <option value="points">Sum Story Points</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label>Filter User (Exact Name - Optional)</Label>
+                                        <Input
+                                            placeholder="e.g. Ali Raza"
+                                            value={pivotConfig.filterUser}
+                                            onChange={(e) => setPivotConfig({ ...pivotConfig, filterUser: e.target.value })}
+                                        />
+                                        <p className="text-[10px] text-muted-foreground">Leave empty to show all users.</p>
+                                    </div>
+
+                                    <Button className="w-full" variant="secondary" onClick={handleGeneratePivot}>
+                                        <i data-lucide="table" className="w-4 h-4 mr-2"></i>
+                                        Generate Pivot Table
+                                    </Button>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {/* LICENSE TAB */}
+                    {
+                        activeTab === 'license' && (
+                            <LicensePanel license={license} setLicense={setLicense} setStatus={setStatus} loadLicenseInfo={loadLicenseInfo} />
+                        )
+                    }
+
+                    {/* Global Status Footer */}
+                    {
+                        status && (
+                            <div className="pt-2">
+                                <Alert
+                                    key={status.id || status.text}
+                                    type={status.type}
+                                    action={status.action}
+                                    className="animate-flash"
+                                >
+                                    {status.text}
+                                </Alert>
+                            </div>
+                        )
+                    }
+
+                    {/* Column Selector Modal */}
+                    {
+                        showColumnModal && (
+                            <ColumnSelector
+                                availableFields={availableFields}
+                                currentColumns={
+                                    targetConfigMode === 'dashboard' ? dashboardConfig.columns :
+                                        targetConfigMode === 'metrics' ? metricsConfig.columns :
+                                            config.columns
+                                }
+                                onSave={(cols) => {
+                                    if (targetConfigMode === 'dashboard') setDashboardConfig(p => ({ ...p, columns: cols }));
+                                    else if (targetConfigMode === 'metrics') setMetricsConfig(p => ({ ...p, columns: cols }));
+                                    else updateConfig('columns', cols);
+                                    setShowColumnModal(false);
+                                }}
+                                onCancel={() => setShowColumnModal(false)}
+                            />
+                        )
+                    }
+                </div >
+            );
+        };
+
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+
+            componentDidCatch(error, errorInfo) {
+                console.error("ErrorBoundary caught an error", error, errorInfo);
+            }
+
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="p-4 text-red-600 bg-red-50 border border-red-200 rounded h-screen">
+                            <h2 className="font-bold mb-2">Something went wrong.</h2>
+                            <details className="text-xs font-mono whitespace-pre-wrap">
+                                <summary>Error Details</summary>
+                                {this.state.error && this.state.error.toString()}
+                            </details>
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="mt-4 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded text-xs"
+                            >
+                                Reload Sidebar
+                            </button>
+                        </div>
+                    );
+                }
+
+                return this.props.children;
+            }
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(
+            <ErrorBoundary>
+                <App />
+            </ErrorBoundary>
+        );
+    </script>
+</body>
+
+</html>

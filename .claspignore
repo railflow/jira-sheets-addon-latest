@@ -1,0 +1,20 @@
+# Ignore everything except Apps Script files
+**/**
+!Code.js
+!Sidebar.html
+!Logs.html
+!Tests.js
+!appsscript.json
+
+# Ignore common non-script files
+.git/**
+.github/**
+node_modules/**
+*.md
+*.json
+!appsscript.json
+.clasp.json
+.claspignore
+.gitignore
+assets/**
+docs/**
