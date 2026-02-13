@@ -1794,26 +1794,41 @@ function generateDashboard(chartStyle, selectedColumns, sourceSheetName) {
     // Use Active Sheet
     let dashSheet = dataSheet;
     const lastDataCol = dashSheet.getLastColumn();
+    // We store the dashboard in a safe zone to the right of data
     const startX = lastDataCol + 2;
 
-    // CLEAR existing dashboard area (to the right of data)
-    try {
-        const maxCols = dashSheet.getMaxColumns();
-        if (maxCols >= startX) {
-            dashSheet.getRange(1, startX, dashSheet.getMaxRows(), maxCols - startX + 1).clear();
-        }
-    } catch (e) {
-        console.warn("Could not clear dashboard area: " + e.message);
-    }
-
-    // -- Layout --
-    let currentRow = 1;
-    dashSheet.getRange(currentRow, startX).setValue("Dashboard").setFontSize(24).setFontWeight("bold");
-    currentRow += 2;
-
-    let chartsCreated = 0;
+    // Layout constants
     const CHARTS_PER_ROW = 2;
     const CHART_HEIGHT_ROWS = 20;
+
+    const ADDON_TAG = "JiraAddonDashboard";
+
+    // SURGICAL CLEAR: Only remove what we created
+    try {
+        // 1. Remove Addon Charts
+        const existingCharts = dashSheet.getCharts();
+        existingCharts.forEach(chart => {
+            const description = chart.getOptions().get('description');
+            if (description === ADDON_TAG) {
+                dashSheet.removeChart(chart);
+            }
+        });
+
+        // 2. Clear Addon Tables (starting from Dashboard heading)
+        const headerCell = dashSheet.getRange(1, startX);
+        if (headerCell.getValue() === "Dashboard") {
+            const colsToClear = CHARTS_PER_ROW * 6;
+            dashSheet.getRange(1, startX, dashSheet.getMaxRows(), colsToClear).clear();
+        }
+
+        // Write fresh heading
+        dashSheet.getRange(1, startX).setValue("Dashboard").setFontSize(24).setFontWeight("bold");
+    } catch (e) {
+        console.warn("Could not selectively clear dashboard area: " + e.message);
+    }
+
+    let currentRow = 3;
+    let chartsCreated = 0;
 
     const createSection = (title, counts, colOffset) => {
         if (!counts) return false;
@@ -1837,6 +1852,7 @@ function generateDashboard(chartStyle, selectedColumns, sourceSheetName) {
             .addRange(range)
             .setPosition(currentRow, startCol + 2, 0, 0)
             .setOption('title', title + ' Distribution')
+            .setOption('description', ADDON_TAG) // TAG for surgical clearing
             .setOption('width', 400)
             .setOption('height', 350);
 
