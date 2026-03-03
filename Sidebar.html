@@ -1321,7 +1321,7 @@
                                 domain: saved.domain || prev.domain,
                                 email: saved.email || prev.email,
                                 token: saved.token || prev.token,
-                                jql: saved.jql || '',
+                                jql: saved.jql || 'assignee = currentUser() AND resolution = Unresolved order by updated DESC',
                                 columns: loadedCols,
                                 projectKey: saved.projectKey || prev.projectKey,
                                 useCloudflare: saved.useCloudflare || false
