@@ -3,7 +3,9 @@
  * Google Apps Script for Jira Sheets Sync
  */
 
-const APP_TITLE = "Jira Sync";
+const APP_TITLE = "Sync Sheets for JIRA";
+const APP_VERSION = "2.0.0";
+const BUILD_DATE = "2026-03-02 00:51:13 PST";
 const CLOUDFLARE_WORKER_URL = "https://jira-proxy.railflow.workers.dev"; // Bakes the proxy URL into the addon
 const PROXY_SECRET = "jira-sheets-secret-2026"; // Must match the secret in cloudflare_worker.js
 
@@ -21,9 +23,10 @@ function onOpen() {
         .addItem('⊞ Pivot Table', 'showPivot')
         .addItem('✏️ JQL Update', 'showJqlUpdate')
         .addItem('🏷️ Label Management', 'showLabels')
-        .addItem('☰ Logs', 'showRefreshLogs')
         .addSeparator()
         .addItem('ⓘ License Info', 'showLicense')
+        .addItem('☰ Logs', 'showRefreshLogs')
+        .addItem('ℹ️ About', 'showAbout')
         .addToUi();
 }
 
@@ -241,6 +244,22 @@ function showLabels() {
 
 function showLicense() {
     showSidebar('license');
+}
+
+function showAbout() {
+    const license = checkLicense();
+    const planLabel = license.plan ? license.plan.charAt(0).toUpperCase() + license.plan.slice(1) : 'Free';
+    const html = HtmlService.createHtmlOutput(
+        '<div style="font-family:Google Sans,Arial,sans-serif;padding:20px;">' +
+        '<h2 style="margin:0 0 16px;">' + APP_TITLE + '</h2>' +
+        '<p style="margin:6px 0;color:#555;">Version: <strong>' + APP_VERSION + '</strong></p>' +
+        '<p style="margin:6px 0;color:#555;">Build Date: <strong>' + BUILD_DATE + '</strong></p>' +
+        '<p style="margin:6px 0;color:#555;">License: <strong>' + planLabel + '</strong></p>' +
+        '</div>'
+    )
+    .setWidth(400)
+    .setHeight(220);
+    SpreadsheetApp.getUi().showModalDialog(html, 'About');
 }
 
 function showSidebar(mode) {
@@ -3462,8 +3481,8 @@ const PORTAL_API_URL = CLOUDFLARE_WORKER_URL + '/api/stripe/portal'; // Future u
 const STRIPE_PRICES = {
     PRO_MONTHLY: 'price_0T06lCPaYAnupERfYwY8d95p',
     PRO_YEARLY: 'price_0T06jnPaYAnupERfQTenhkHV',
-    ENTERPRISE_MONTHLY: 'price_0T072TPaYAnupERfbBilSTH5',
-    ENTERPRISE_YEARLY: 'price_0T06yQPaYAnupERfrACbxJKL'
+    ENTERPRISE_MONTHLY: 'price_1T6PvIDhvP6DurKSCrisUWHI',
+    ENTERPRISE_YEARLY: 'price_1T6PvVDhvP6DurKSHcVjbbC2'
 };
 
 /**
@@ -3615,8 +3634,8 @@ function getPricingInfo() {
         enterprise: {
             name: 'Enterprise License',
             description: 'Best for large orgs',
-            monthly: { price: '$500/month', priceId: STRIPE_PRICES.ENTERPRISE_MONTHLY, value: 500 },
-            yearly: { price: '$5000/year', priceId: STRIPE_PRICES.ENTERPRISE_YEARLY, value: 5000 },
+            monthly: { price: '$345/month', priceId: STRIPE_PRICES.ENTERPRISE_MONTHLY, value: 345 },
+            yearly: { price: '$2900/year', priceId: STRIPE_PRICES.ENTERPRISE_YEARLY, value: 2900 },
             features: [
                 'Unlimited users',
                 'Domain-wide access',
