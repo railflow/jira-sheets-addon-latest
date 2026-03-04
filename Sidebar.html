@@ -14,6 +14,11 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Stripe.js -->
     <script src="https://js.stripe.com/v3/"></script>
+    <!-- PostHog Analytics -->
+    <script>
+        !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+        posthog.init('phc_OuKdpPtRYLpRT4EOqsnReAfblYzEhW4Ru8n3C6pxBSO', {api_host:'https://us.i.posthog.com', person_profiles:'identified_only'});
+    </script>
 
     <script>
         tailwind.config = {
@@ -372,6 +377,7 @@
 
             const handlePay = async (e) => {
                 if (e) e.preventDefault();
+                if (window.posthog) posthog.capture('sheets.license.payment_initiated', { plan });
 
                 // Open window immediately to avoid popup blockers
                 const checkoutWindow = window.open('about:blank', '_blank');
@@ -520,6 +526,8 @@
                     const total = unitPrice * seatsInput;
                     finalPrice = `$${total}/${billingCycle === 'yearly' ? 'year' : 'month'} (${seatsInput} seats)`;
                 }
+
+                if (window.posthog) posthog.capture('sheets.license.upgrade_clicked', { plan: purchaseType });
 
                 // Use the checkout panel
                 setSelectedPriceId(priceId);
@@ -1147,6 +1155,14 @@
             const [loading, setLoading] = useState(false);
             const [license, setLicense] = useState({ allowed: true, plan: 'Checking...', status: 'loading' });
 
+            // Auto-dismiss success/error alerts after 2 seconds
+            useEffect(() => {
+                if (status && (status.type === 'success' || status.type === 'error')) {
+                    const timer = setTimeout(() => setStatus(null), 2000);
+                    return () => clearTimeout(timer);
+                }
+            }, [status]);
+
             const loadLicenseInfo = async (silent = true) => {
                 try {
                     const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/license/check`, {
@@ -1162,8 +1178,8 @@
 
                     const data = await res.json();
 
-                    // Success detection: if we were checking or free and now have a plan
-                    const upgraded = (license.plan === 'Checking...' || license.plan === 'free') && (data.plan && data.plan !== 'free');
+                    // Success detection: only show when upgrading from free, not on initial load
+                    const upgraded = license.plan === 'free' && (data.plan && data.plan !== 'free');
 
                     setLicense(data);
 
@@ -1211,6 +1227,7 @@
             // Scheduled Refresh / Interval
             const [refreshMode, setRefreshMode] = useState('interval'); // 'interval' or 'scheduled'
             const [labelsData, setLabelsData] = useState({});
+            const [labelsSourceSheet, setLabelsSourceSheet] = useState('');
             const [roadmapConfig, setRoadmapConfig] = useState({
                 startDateCol: '',
                 endDateCol: '',
@@ -1259,6 +1276,7 @@
             useEffect(() => {
                 loadConfiguration();
                 loadLicenseInfo();
+                if (window.posthog && USER_EMAIL) posthog.identify(USER_EMAIL);
 
                 // Refresh license when user returns to sheet
                 const handleFocus = () => loadLicenseInfo();
@@ -1280,8 +1298,7 @@
                                             return info.sheetId; // Just update ID tracking, no action
                                         }
 
-                                        // If switching to a standard sheet (Source), reload config and show Issues tab
-                                        setActiveTab('issues');
+                                        // Reload config for the new sheet, but stay on the current tab
                                         loadConfiguration();
                                         return info.sheetId;
                                     }
@@ -1297,6 +1314,10 @@
                     window.removeEventListener('focus', handleFocus);
                 };
             }, []);
+
+            useEffect(() => {
+                if (window.posthog) posthog.capture('sheets.navigation.tab_switched', { tab: activeTab });
+            }, [activeTab]);
 
             const loadConfiguration = () => {
                 setLoading(true);
@@ -1408,6 +1429,7 @@
                     .withSuccessHandler(() => {
                         setStatus({ type: 'success', text: 'Configuration saved' });
                         setLoading(false);
+                        if (window.posthog) posthog.capture('sheets.config.saved');
                         // Redirect to Issues tab after a short delay
                         setTimeout(() => setActiveTab('issues'), 800);
                     })
@@ -1423,6 +1445,7 @@
                 google.script.run
                     .withSuccessHandler((res) => {
                         setConnectionTest({ success: true, msg: res.message });
+                        if (window.posthog) posthog.capture('sheets.config.connection_tested');
                     })
                     .withFailureHandler((err) => {
                         setConnectionTest({ success: false, msg: err.message });
@@ -1537,6 +1560,7 @@
                                 type: 'success',
                                 text: `Fetched ${res.count} issues. ${res.changedCount} updated. ${duration} ms`
                             });
+                            if (window.posthog) posthog.capture('sheets.issues.refreshed', { issue_count: res.count });
                         }
                     })
                     .withFailureHandler((err) => {
@@ -1575,6 +1599,7 @@
                                 type: 'success',
                                 text: `Global Sync: Refreshed ${res.sheetCount} sheets (${res.count} issues). ${duration} ms`
                             });
+                            if (window.posthog) posthog.capture('sheets.issues.global_refreshed', { issue_count: res.count });
                         }
                     })
                     .withFailureHandler((err) => {
@@ -1630,6 +1655,7 @@
                                         });
                                     } else {
                                         setStatus({ type: 'success', text: `Updated ${updatedCount} issues${cellText}.` });
+                                        if (window.posthog) posthog.capture('sheets.issues.updated', { issue_count: updatedCount });
                                     }
                                     return;
                                 }
@@ -1669,6 +1695,7 @@
                                     const msg = `Created ${res.count} issues${typeSummary ? ': ' + typeSummary : ''}`;
 
                                     setStatus({ type: 'success', text: msg });
+                                    if (window.posthog) posthog.capture('sheets.issues.created', { issue_count: res.count });
                                     handleRefresh();
                                 })
                                 .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
@@ -1718,6 +1745,7 @@
                                 } else {
                                     setStatus({ type: 'success', text: msg });
                                 }
+                                if (window.posthog) posthog.capture('sheets.bulkcreate.created', { issue_count: res.count });
                                 handleRefresh();
                             })
                             .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
@@ -1734,6 +1762,7 @@
                 google.script.run
                     .withSuccessHandler(() => {
                         setStatus({ type: 'success', text: 'Issue colors reset' });
+                        if (window.posthog) posthog.capture('sheets.issues.colors_reset');
                     })
                     .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                     .resetIssueColors();
@@ -1752,6 +1781,7 @@
                             msg += ` Skipped: ${result.skipped.join(', ')} (not suitable for charts)`;
                         }
                         setStatus({ type: 'success', text: msg });
+                        if (window.posthog) posthog.capture('sheets.dashboard.generated', { dashboard_type: dashboardType });
                     })
                     .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                     .generateDashboard(dashboardType, dashboardColumns, dashboardConfig.sourceSheet);
@@ -1765,6 +1795,7 @@
                 google.script.run
                     .withSuccessHandler(() => {
                         setStatus({ type: 'success', text: 'Trend Chart Created!' });
+                        if (window.posthog) posthog.capture('sheets.metrics.trend_generated');
                     })
                     .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                     .generateTrendChart(trendConfig.type, trendConfig.period, trendConfig.sourceSheet); // Missing sourceSheet in state initially, added now
@@ -1775,6 +1806,7 @@
                 google.script.run
                     .withSuccessHandler(() => {
                         setStatus({ type: 'success', text: 'Roadmap Created (See "Jira Roadmap" sheet)' });
+                        if (window.posthog) posthog.capture('sheets.roadmap.generated');
                     })
                     .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                     .generateRoadmap(roadmapConfig, roadmapConfig.sourceSheet);
@@ -1790,6 +1822,7 @@
                 google.script.run
                     .withSuccessHandler(() => {
                         setStatus({ type: 'success', text: 'Capacity Plan Created (See "Jira Capacity Plan" sheet)' });
+                        if (window.posthog) posthog.capture('sheets.capacity.generated');
                     })
                     .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                     .generateCapacityPlan(capacityConfig, capacityConfig.sourceSheet);
@@ -1800,6 +1833,7 @@
                 google.script.run
                     .withSuccessHandler(() => {
                         setStatus({ type: 'success', text: 'Pivot Table Created (See "Jira Pivot" sheet)' });
+                        if (window.posthog) posthog.capture('sheets.pivot.generated');
                     })
                     .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                     .generatePivotTable(pivotConfig, pivotConfig.sourceSheet);
@@ -1826,6 +1860,7 @@
                                         type: res.failed === 0 ? 'success' : 'warning',
                                         text: msg
                                     });
+                                    if (window.posthog) posthog.capture('sheets.issues.deleted', { issue_count: res.deleted });
                                 })
                                 .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                                 .deleteSelectedJiraIssues(config);
@@ -1838,6 +1873,7 @@
             };
 
             const handleToggleSchedule = () => {
+                if (window.posthog) posthog.capture('sheets.schedule.toggled', { mode: refreshMode });
                 if (refreshMode === 'none') {
                     setStatus({ type: 'info', text: 'Disabling auto-refresh...' });
                     setIsIntervalRunning(false);
@@ -2431,53 +2467,6 @@
                                             refreshHeaderCols(val);
                                         }}
                                     />
-                                    <div className="space-y-3 p-3 bg-muted/20 rounded-lg border border-border">
-                                        <div className="space-y-1">
-                                            <Label className="text-xs">Start Date Column <span className="text-red-500">*</span></Label>
-                                            <select
-                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:ring-1 focus:ring-primary"
-                                                value={roadmapConfig.startDateCol}
-                                                onChange={(e) => setRoadmapConfig({ ...roadmapConfig, startDateCol: e.target.value })}
-                                            >
-                                                <option value="">Select Start Column...</option>
-                                                {sheetHeaders.map(h => (
-                                                    <option key={h} value={h}>{h}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        <div className="space-y-1">
-                                            <Label className="text-xs">End Date Column <span className="text-red-500">*</span></Label>
-                                            <select
-                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:ring-1 focus:ring-primary"
-                                                value={roadmapConfig.endDateCol}
-                                                onChange={(e) => setRoadmapConfig({ ...roadmapConfig, endDateCol: e.target.value })}
-                                            >
-                                                <option value="">Select End Column...</option>
-                                                {sheetHeaders.map(h => (
-                                                    <option key={h} value={h}>{h}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground">Pick columns containing dates to position issues on the timeline.</p>
-                                </div>
-
-                                <Button
-                                    className="w-full"
-                                    variant="secondary"
-                                    onClick={handleGenerateRoadmap}
-                                    disabled={!roadmapConfig.startDateCol || !roadmapConfig.endDateCol}
-                                >
-                                    <i data-lucide="gantt-chart" className="w-4 h-4 mr-2"></i>
-                                    Generate Roadmap
-                                </Button>
-
-                                <div className="space-y-4">
-                                    <SourceSheetSelector
-                                        selected={roadmapConfig.sourceSheet}
-                                        onChange={(val) => setRoadmapConfig(prev => ({ ...prev, sourceSheet: val }))}
-                                    />
 
                                     {/* Roadmap Duration Mode */}
                                     <div className="space-y-1">
@@ -2565,20 +2554,25 @@
                                 </div>
 
                                 <div className="space-y-3">
+                                    <SourceSheetSelector
+                                        selected={labelsSourceSheet}
+                                        onChange={(val) => setLabelsSourceSheet(val)}
+                                    />
                                     <Button className="w-full" variant="secondary" onClick={() => {
                                         setLoading(true);
                                         setStatus({ type: 'info', text: 'Fetching label statistics...' });
                                         google.script.run
                                             .withSuccessHandler((data) => {
                                                 setLoading(false);
-                                                setLabelsData(data); // Expecting { "label1": 10, "label2": 5 }
+                                                setLabelsData(data);
                                                 setStatus({ type: 'success', text: `Loaded ${Object.keys(data).length} labels.` });
+                                                if (window.posthog) posthog.capture('sheets.labels.loaded', { label_count: Object.keys(data).length });
                                             })
                                             .withFailureHandler((err) => {
                                                 setLoading(false);
                                                 setStatus({ type: 'error', text: 'Failed to load labels: ' + err.message });
                                             })
-                                            .getLabelStats(config);
+                                            .getLabelStats({ ...config, sourceSheet: labelsSourceSheet });
                                     }} disabled={loading}>
                                         {loading ? 'Busy...' : 'Load Label Statistics'}
                                     </Button>
@@ -2627,6 +2621,7 @@
                                                                                     newData[cleanedNewName] = (newData[cleanedNewName] || 0) + oldCount;
                                                                                     setLabelsData(newData);
                                                                                     setStatus({ type: 'success', text: `Renamed label to "${cleanedNewName}" across ${res.updated} issues.` });
+                                                                                    if (window.posthog) posthog.capture('sheets.labels.renamed');
                                                                                 } else {
                                                                                     setStatus({ type: 'error', text: `Failed: ${res.error}` });
                                                                                 }
@@ -2657,6 +2652,7 @@
                                                                                     delete newData[label];
                                                                                     setLabelsData(newData);
                                                                                     setStatus({ type: 'success', text: `Removed label "${label}" from ${res.updated} issues.` });
+                                                                                    if (window.posthog) posthog.capture('sheets.labels.removed');
                                                                                 } else {
                                                                                     setStatus({ type: 'error', text: `Failed: ${res.error}` });
                                                                                 }
@@ -2976,6 +2972,7 @@
                                                                 type: res.success ? 'success' : 'error',
                                                                 text: res.success ? `Successfully updated ${res.updated} issues.` : `Update failed: ${res.error}`
                                                             });
+                                                            if (res.success && window.posthog) posthog.capture('sheets.jqlupdate.executed', { issue_count: res.updated });
                                                         })
                                                         .withFailureHandler((err) => {
                                                             setLoading(false);
