@@ -693,17 +693,13 @@ function fetchJiraData(params) {
         return name;
     });
 
-    // Prepare 2D array for Sheet (only display requested columns, not 'updated' unless requested)
-    const output = [friendlyHeaders];
-    const rowIsChanged = [false]; // First row is header, not changed
-
+    // Build a map of issue key -> row data for quick lookup
+    const issueMap = {};
     issues.forEach(issue => {
         const row = columns.map(col => {
             if (col === 'key') {
-                // Create hyperlink formula: =HYPERLINK("https://domain/browse/KEY", "KEY")
                 return `=HYPERLINK("https://${cleanDomain}/browse/${issue.key}", "${issue.key}")`;
             }
-            // Handle nested fields (simple implementation)
             const val = issue.fields ? issue.fields[col] : null;
             if (val === null || val === undefined) return "";
             if (typeof val === 'object') {
@@ -711,8 +707,34 @@ function fetchJiraData(params) {
             }
             return val;
         });
-        output.push(row);
-        rowIsChanged.push(changedKeys.has(issue.key));
+        issueMap[issue.key] = row;
+    });
+
+    // Preserve existing row order: read current keys from sheet, update in place, append new
+    const output = [friendlyHeaders];
+    const rowIsChanged = [false]; // First row is header, not changed
+    const processedKeys = new Set();
+
+    const existingLastRow = sheet.getLastRow();
+    const keyColIndex = columns.indexOf('key');
+    if (existingLastRow > 1 && keyColIndex !== -1) {
+        const existingKeys = sheet.getRange(2, keyColIndex + 1, existingLastRow - 1, 1).getDisplayValues();
+        existingKeys.forEach(row => {
+            const existingKey = row[0] ? row[0].toString().trim() : '';
+            if (existingKey && issueMap[existingKey]) {
+                output.push(issueMap[existingKey]);
+                rowIsChanged.push(changedKeys.has(existingKey));
+                processedKeys.add(existingKey);
+            }
+        });
+    }
+
+    // Append any new issues not already on the sheet
+    issues.forEach(issue => {
+        if (!processedKeys.has(issue.key)) {
+            output.push(issueMap[issue.key]);
+            rowIsChanged.push(changedKeys.has(issue.key));
+        }
     });
 
     // Collect unique users for mapping and dropdown
@@ -1760,7 +1782,20 @@ function createJiraIssues(params, creates) {
         throw new Error(`Some creations failed:\n${errors.join('\n')}`);
     }
 
+    // Highlight created rows in light green
+    const lastCol = sheet.getLastColumn();
+    createdRows.forEach(row => {
+        sheet.getRange(row, 1, 1, lastCol).setBackground('#d1fae5');
+    });
     SpreadsheetApp.flush();
+
+    // Clear highlights after 10 seconds
+    Utilities.sleep(10000);
+    createdRows.forEach(row => {
+        sheet.getRange(row, 1, 1, lastCol).setBackground(null);
+    });
+    SpreadsheetApp.flush();
+
     return { success: true, count: successCount, types: createdTypes, limited: isLimited, createdRows: createdRows };
 }
 

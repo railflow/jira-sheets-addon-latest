@@ -1698,9 +1698,6 @@
 
                                     setStatus({ type: 'success', text: msg });
                                     if (window.posthog) posthog.capture('sheets.issues.created', { issue_count: res.count });
-                                    if (res.createdRows && res.createdRows.length > 0) {
-                                        google.script.run.highlightRowsTemporarily(res.createdRows);
-                                    }
                                 })
                                 .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                                 .createJiraIssues(config, creates);
@@ -1750,9 +1747,6 @@
                                     setStatus({ type: 'success', text: msg });
                                 }
                                 if (window.posthog) posthog.capture('sheets.bulkcreate.created', { issue_count: res.count });
-                                if (res.createdRows && res.createdRows.length > 0) {
-                                    google.script.run.highlightRowsTemporarily(res.createdRows);
-                                }
                             })
                             .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                             .createJiraIssues({ ...config, isPro }, creates);
