@@ -1360,9 +1360,16 @@ function getJiraFilters(config) {
  */
 function getSelectedRowsData() {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const selection = sheet.getSelection();
-    const ranges = sheet.getSelection().getActiveRangeList().getRanges();
-    if (!ranges || ranges.length === 0) return { updates: [], creates: [] };
+    const rangeList = sheet.getSelection().getActiveRangeList();
+    let ranges = rangeList ? rangeList.getRanges() : [];
+
+    // If no selection or selection is a single cell (default state), auto-detect all data rows
+    const isSingleCell = ranges.length === 1 && ranges[0].getNumRows() === 1 && ranges[0].getNumColumns() === 1;
+    if (ranges.length === 0 || isSingleCell) {
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) return { updates: [], creates: [] };
+        ranges = [sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn())];
+    }
 
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     const headerMap = headers.map(h => h.toString().toLowerCase().trim()); // Normalize for index lookup

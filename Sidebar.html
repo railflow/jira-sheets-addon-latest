@@ -1701,7 +1701,6 @@
                                     if (res.createdRows && res.createdRows.length > 0) {
                                         google.script.run.highlightRowsTemporarily(res.createdRows);
                                     }
-                                    handleRefresh();
                                 })
                                 .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                                 .createJiraIssues(config, creates);
@@ -1729,7 +1728,7 @@
                         }
 
                         if (!creates.length) {
-                            setStatus({ type: 'info', text: 'No new rows to create. Select rows without a Jira key.' });
+                            setStatus({ type: 'info', text: 'No new rows to create. Add rows without a Jira key.' });
                             return;
                         }
 
@@ -1754,7 +1753,6 @@
                                 if (res.createdRows && res.createdRows.length > 0) {
                                     google.script.run.highlightRowsTemporarily(res.createdRows);
                                 }
-                                handleRefresh();
                             })
                             .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                             .createJiraIssues({ ...config, isPro }, creates);
