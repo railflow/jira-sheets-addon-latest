@@ -1770,7 +1770,8 @@ function createJiraIssues(params, creates) {
                 createdRows.push(creates[i].lineNumber);
                 // Write the Jira key back to the sheet so rows stay in place on next refresh
                 if (keyColIndex !== -1 && data.key) {
-                    sheet.getRange(creates[i].lineNumber, keyColIndex + 1).setValue(data.key);
+                    const link = `=HYPERLINK("https://${cleanDomain}/browse/${data.key}", "${data.key}")`;
+                    sheet.getRange(creates[i].lineNumber, keyColIndex + 1).setFormula(link);
                 }
             }
         } else {
