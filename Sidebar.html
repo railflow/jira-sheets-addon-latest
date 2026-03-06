@@ -1229,6 +1229,7 @@
             const [labelsData, setLabelsData] = useState({});
             const [labelsSourceSheet, setLabelsSourceSheet] = useState('');
             const [bulkUpdatePreview, setBulkUpdatePreview] = useState(null); // { jql, count, command }
+            const [deleteConfirm, setDeleteConfirm] = useState(null); // { count }
             const [roadmapConfig, setRoadmapConfig] = useState({
                 startDateCol: '',
                 endDateCol: '',
@@ -1848,29 +1849,31 @@
                             setStatus({ type: 'error', text: 'No issue keys found in selection.' });
                             return;
                         }
-
-                        if (confirm(`Are you sure you want to delete ${count} issues from Jira?\nThis action cannot be undone.`)) {
-                            setStatus({ type: 'info', text: `Deleting ${count} items...` });
-                            google.script.run
-                                .withSuccessHandler((res) => {
-                                    let msg = `Deleted: ${res.deleted}. Failed: ${res.failed}.`;
-                                    if (res.failed > 0 && res.errors.length > 0) {
-                                        msg += ` Error: ${res.errors[0]}`;
-                                    }
-                                    setStatus({
-                                        type: res.failed === 0 ? 'success' : 'warning',
-                                        text: msg
-                                    });
-                                    if (window.posthog) posthog.capture('sheets.issues.deleted', { issue_count: res.deleted });
-                                })
-                                .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
-                                .deleteSelectedJiraIssues(config);
-                        } else {
-                            setStatus({ type: 'info', text: 'Deletion cancelled.' });
-                        }
+                        setStatus(null);
+                        setDeleteConfirm({ count });
                     })
                     .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                     .getSelectedIssueCount(config);
+            };
+
+            const executeDeleteIssues = () => {
+                const count = deleteConfirm?.count;
+                setDeleteConfirm(null);
+                setStatus({ type: 'info', text: `Deleting ${count} items...` });
+                google.script.run
+                    .withSuccessHandler((res) => {
+                        let msg = `Deleted: ${res.deleted}. Failed: ${res.failed}.`;
+                        if (res.failed > 0 && res.errors.length > 0) {
+                            msg += ` Error: ${res.errors[0]}`;
+                        }
+                        setStatus({
+                            type: res.failed === 0 ? 'success' : 'warning',
+                            text: msg
+                        });
+                        if (window.posthog) posthog.capture('sheets.issues.deleted', { issue_count: res.deleted });
+                    })
+                    .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
+                    .deleteSelectedJiraIssues(config);
             };
 
             const handleToggleSchedule = () => {
@@ -2189,12 +2192,38 @@
                                                 <i data-lucide="pencil" className="w-3 h-3 mr-1"></i>
                                                 Update Issues
                                             </Button>
-                                            <Button className="text-xs" variant="destructive" onClick={handleDeleteIssues}>
+                                            <Button className="text-xs" variant="destructive" onClick={handleDeleteIssues} disabled={deleteConfirm}>
                                                 <i data-lucide="trash-2" className="w-3 h-3 mr-1"></i>
                                                 Delete Issues
                                             </Button>
                                         </div>
                                     </div>
+
+                                    {deleteConfirm && (
+                                        <div className="border border-red-300 bg-red-50 rounded-lg p-4 space-y-3 animation-fade-in">
+                                            <div className="flex items-start gap-2">
+                                                <i data-lucide="alert-triangle" className="w-5 h-5 text-red-600 shrink-0 mt-0.5"></i>
+                                                <div className="space-y-1">
+                                                    <p className="text-sm font-semibold text-red-900">Confirm Deletion</p>
+                                                    <p className="text-sm text-red-900">
+                                                        Delete <span className="font-bold">{deleteConfirm.count}</span> issues from Jira? This action cannot be undone.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={executeDeleteIssues}>
+                                                    <i data-lucide="trash-2" className="w-4 h-4 mr-1"></i>
+                                                    Delete
+                                                </Button>
+                                                <Button className="flex-1" variant="outline" onClick={() => {
+                                                    setDeleteConfirm(null);
+                                                    setStatus({ type: 'info', text: 'Deletion cancelled.' });
+                                                }}>
+                                                    Cancel
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </JiraDataControl>
                             </div>
                         )
