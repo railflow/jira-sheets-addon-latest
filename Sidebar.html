@@ -1230,6 +1230,8 @@
             const [labelsSourceSheet, setLabelsSourceSheet] = useState('');
             const [bulkUpdatePreview, setBulkUpdatePreview] = useState(null); // { jql, count, command }
             const [deleteConfirm, setDeleteConfirm] = useState(null); // { count }
+            const [renamingLabel, setRenamingLabel] = useState(null); // { label, newName }
+            const [deletingLabel, setDeletingLabel] = useState(null); // { label, count }
             const [roadmapConfig, setRoadmapConfig] = useState({
                 startDateCol: '',
                 endDateCol: '',
@@ -2610,39 +2612,68 @@
                                             <Label>Found Labels ({Object.keys(labelsData).length})</Label>
                                             <div className="border rounded-md divide-y max-h-[600px] overflow-y-auto">
                                                 {Object.entries(labelsData).sort((a, b) => b[1] - a[1]).map(([label, count]) => (
-                                                    <div key={label} className="p-2 flex justify-between items-center hover:bg-slate-50 text-xs">
-                                                        <div className="flex items-center space-x-2">
-                                                            <span className="font-mono bg-slate-100 px-1 rounded">{label}</span>
-                                                            <span
-                                                                className="text-blue-600 cursor-pointer hover:underline"
-                                                                title="Click to view issues in sheet"
-                                                                onClick={() => {
-                                                                    const newJql = `labels = "${label}"`;
-                                                                    const newConfig = { ...config, jql: newJql, targetSheetName: 'label-management' };
-                                                                    updateConfig('jql', newJql);
-                                                                    setActiveTab('issues');
-                                                                    handleRefresh('Manual', false, newConfig);
-                                                                    setStatus({ type: 'info', text: `Fetching issues for label: ${label} to 'label-management' sheet` });
-                                                                }}
-                                                            >
-                                                                ({count} issues)
-                                                            </span>
+                                                    <div key={label}>
+                                                        <div className="p-2 flex justify-between items-center hover:bg-slate-50 text-xs">
+                                                            <div className="flex items-center space-x-2">
+                                                                <span className="font-mono bg-slate-100 px-1 rounded">{label}</span>
+                                                                <span
+                                                                    className="text-blue-600 cursor-pointer hover:underline"
+                                                                    title="Click to view issues in sheet"
+                                                                    onClick={() => {
+                                                                        const newJql = `labels = "${label}"`;
+                                                                        const newConfig = { ...config, jql: newJql, targetSheetName: 'label-management' };
+                                                                        updateConfig('jql', newJql);
+                                                                        setActiveTab('issues');
+                                                                        handleRefresh('Manual', false, newConfig);
+                                                                        setStatus({ type: 'info', text: `Fetching issues for label: ${label} to 'label-management' sheet` });
+                                                                    }}
+                                                                >
+                                                                    ({count} issues)
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex gap-1">
+                                                                <button
+                                                                    className="text-blue-500 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
+                                                                    title="Rename this label"
+                                                                    onClick={() => setRenamingLabel({ label, newName: label })}
+                                                                >
+                                                                    <span className="text-xs"><i data-lucide="edit-2" className="w-3.5 h-3.5"></i></span>
+                                                                </button>
+                                                                <button
+                                                                    className="text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50"
+                                                                    title="Remove this label from all issues"
+                                                                    onClick={() => setDeletingLabel({ label, count })}
+                                                                >
+                                                                    <span className="text-xs"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></span>
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex gap-1">
-                                                            <button
-                                                                className="text-blue-500 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
-                                                                title="Rename this label"
-                                                                onClick={() => {
-                                                                    const newName = prompt(`Enter new name for label "${label}":`, label);
-                                                                    if (newName && newName.trim() !== "" && newName.trim() !== label) {
-                                                                        const cleanedNewName = newName.trim();
+
+                                                        {renamingLabel && renamingLabel.label === label && (
+                                                            <div className="border border-blue-300 bg-blue-50 rounded-lg p-3 mx-2 mb-2 space-y-2 animation-fade-in">
+                                                                <p className="text-xs font-semibold text-blue-900">Rename "{label}"</p>
+                                                                <input
+                                                                    type="text"
+                                                                    className="flex h-8 w-full rounded-md border border-input bg-white px-2 py-1 text-xs shadow-sm"
+                                                                    value={renamingLabel.newName}
+                                                                    onChange={(e) => setRenamingLabel({ ...renamingLabel, newName: e.target.value })}
+                                                                    autoFocus
+                                                                    onKeyDown={(e) => { if (e.key === 'Escape') setRenamingLabel(null); }}
+                                                                />
+                                                                <div className="flex gap-2">
+                                                                    <Button className="flex-1 text-xs" onClick={() => {
+                                                                        const cleanedNewName = renamingLabel.newName.trim();
+                                                                        if (!cleanedNewName || cleanedNewName === label) {
+                                                                            setRenamingLabel(null);
+                                                                            return;
+                                                                        }
+                                                                        setRenamingLabel(null);
                                                                         setLoading(true);
                                                                         setStatus({ type: 'info', text: `Renaming label "${label}" to "${cleanedNewName}"...` });
                                                                         google.script.run
                                                                             .withSuccessHandler((res) => {
                                                                                 setLoading(false);
                                                                                 if (res.success) {
-                                                                                    // Update local state: remove old, add new
                                                                                     const newData = { ...labelsData };
                                                                                     const oldCount = newData[label];
                                                                                     delete newData[label];
@@ -2659,23 +2690,34 @@
                                                                                 setStatus({ type: 'error', text: 'Error: ' + err.message });
                                                                             })
                                                                             .renameLabelInIssues(config, label, cleanedNewName);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <span className="text-xs"><i data-lucide="edit-2" className="w-3.5 h-3.5"></i></span>
-                                                            </button>
-                                                            <button
-                                                                className="text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50"
-                                                                title="Remove this label from all issues"
-                                                                onClick={() => {
-                                                                    if (confirm(`Are you sure you want to remove label "${label}" from ${count} issues? This cannot be undone.`)) {
+                                                                    }}>
+                                                                        <i data-lucide="check" className="w-3 h-3 mr-1"></i>
+                                                                        Rename
+                                                                    </Button>
+                                                                    <Button className="flex-1 text-xs" variant="outline" onClick={() => setRenamingLabel(null)}>
+                                                                        Cancel
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {deletingLabel && deletingLabel.label === label && (
+                                                            <div className="border border-red-300 bg-red-50 rounded-lg p-3 mx-2 mb-2 space-y-2 animation-fade-in">
+                                                                <div className="flex items-start gap-2">
+                                                                    <i data-lucide="alert-triangle" className="w-4 h-4 text-red-600 shrink-0 mt-0.5"></i>
+                                                                    <p className="text-xs text-red-900">
+                                                                        Remove label <span className="font-bold">"{label}"</span> from <span className="font-bold">{count}</span> issues? This cannot be undone.
+                                                                    </p>
+                                                                </div>
+                                                                <div className="flex gap-2">
+                                                                    <Button className="flex-1 text-xs bg-red-600 hover:bg-red-700" onClick={() => {
+                                                                        setDeletingLabel(null);
                                                                         setLoading(true);
                                                                         setStatus({ type: 'info', text: `Removing label "${label}"...` });
                                                                         google.script.run
                                                                             .withSuccessHandler((res) => {
                                                                                 setLoading(false);
                                                                                 if (res.success) {
-                                                                                    // Remove from local state
                                                                                     const newData = { ...labelsData };
                                                                                     delete newData[label];
                                                                                     setLabelsData(newData);
@@ -2690,12 +2732,16 @@
                                                                                 setStatus({ type: 'error', text: 'Error: ' + err.message });
                                                                             })
                                                                             .removeLabelFromIssues(config, label);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <span className="text-xs"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></span>
-                                                            </button>
-                                                        </div>
+                                                                    }}>
+                                                                        <i data-lucide="trash-2" className="w-3 h-3 mr-1"></i>
+                                                                        Remove
+                                                                    </Button>
+                                                                    <Button className="flex-1 text-xs" variant="outline" onClick={() => setDeletingLabel(null)}>
+                                                                        Cancel
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
