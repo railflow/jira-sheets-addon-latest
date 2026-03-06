@@ -1129,6 +1129,33 @@ function resetIssueColors() {
 }
 
 /**
+ * Highlights specific rows with a color, then clears after a delay
+ * @param {number[]} rows - Array of row numbers to highlight
+ * @param {string} color - Hex color (default light green)
+ * @param {number} delaySeconds - Seconds before clearing (default 10)
+ */
+function highlightRowsTemporarily(rows, color, delaySeconds) {
+    if (!rows || rows.length === 0) return;
+    color = color || '#d1fae5';
+    delaySeconds = delaySeconds || 10;
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const lastCol = sheet.getLastColumn();
+
+    rows.forEach(row => {
+        sheet.getRange(row, 1, 1, lastCol).setBackground(color);
+    });
+    SpreadsheetApp.flush();
+
+    Utilities.sleep(delaySeconds * 1000);
+
+    rows.forEach(row => {
+        sheet.getRange(row, 1, 1, lastCol).setBackground(null);
+    });
+    SpreadsheetApp.flush();
+}
+
+/**
  * Fetches all available fields from Jira
  */
 function getJiraFields(config) {
@@ -1695,6 +1722,7 @@ function createJiraIssues(params, creates) {
     const responses = fetchAllJira(requests, params);
     const errors = [];
     const createdTypes = {};
+    const createdRows = [];
     let successCount = 0;
 
     responses.forEach((res, i) => {
@@ -1704,6 +1732,7 @@ function createJiraIssues(params, creates) {
             // Try to record type if available in payload
             const typeName = creates[i].fields.issuetype?.name || 'Issue';
             createdTypes[typeName] = (createdTypes[typeName] || 0) + 1;
+            if (creates[i].lineNumber) createdRows.push(creates[i].lineNumber);
         } else {
             errors.push(`Row ${creates[i].lineNumber}: ${res.getContentText()}`);
         }
@@ -1713,7 +1742,7 @@ function createJiraIssues(params, creates) {
         throw new Error(`Some creations failed:\n${errors.join('\n')}`);
     }
 
-    return { success: true, count: successCount, types: createdTypes, limited: isLimited };
+    return { success: true, count: successCount, types: createdTypes, limited: isLimited, createdRows: createdRows };
 }
 
 /**
