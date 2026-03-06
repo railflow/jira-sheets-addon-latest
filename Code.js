@@ -1732,6 +1732,11 @@ function createJiraIssues(params, creates) {
     const createdRows = [];
     let successCount = 0;
 
+    // Find key column to write back created keys
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const keyColIndex = headers.map(h => h.toString().toLowerCase().trim()).indexOf('key');
+
     responses.forEach((res, i) => {
         if (res.getResponseCode() === 201) {
             successCount++;
@@ -1739,7 +1744,13 @@ function createJiraIssues(params, creates) {
             // Try to record type if available in payload
             const typeName = creates[i].fields.issuetype?.name || 'Issue';
             createdTypes[typeName] = (createdTypes[typeName] || 0) + 1;
-            if (creates[i].lineNumber) createdRows.push(creates[i].lineNumber);
+            if (creates[i].lineNumber) {
+                createdRows.push(creates[i].lineNumber);
+                // Write the Jira key back to the sheet so rows stay in place on next refresh
+                if (keyColIndex !== -1 && data.key) {
+                    sheet.getRange(creates[i].lineNumber, keyColIndex + 1).setValue(data.key);
+                }
+            }
         } else {
             errors.push(`Row ${creates[i].lineNumber}: ${res.getContentText()}`);
         }
@@ -1749,6 +1760,7 @@ function createJiraIssues(params, creates) {
         throw new Error(`Some creations failed:\n${errors.join('\n')}`);
     }
 
+    SpreadsheetApp.flush();
     return { success: true, count: successCount, types: createdTypes, limited: isLimited, createdRows: createdRows };
 }
 
