@@ -364,11 +364,24 @@ function getSheetHeaders(sheetName) {
 
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
 
+    // Known custom field labels
+    const CUSTOM_FIELD_LABELS = {
+        'customfield_10015': 'Start Date',
+        'customfield_10016': 'Story Points',
+        'customfield_10017': 'Epic Link',
+        'customfield_10018': 'Epic Name',
+        'customfield_10019': 'Sprint'
+    };
+
     // Convert to "Header (A)", "Header (B)" etc to handle duplicates
     return headers.map((h, i) => {
         if (!h || h.toString().trim() === '') return null;
         const letter = columnToLetter(i + 1);
-        return `${h.toString().trim()} (${letter})`;
+        let label = h.toString().trim();
+        if (label.startsWith('customfield_')) {
+            label = CUSTOM_FIELD_LABELS[label] || label;
+        }
+        return `${label} (${letter})`;
     }).filter(h => h !== null);
 }
 
@@ -1063,21 +1076,18 @@ function previewBulkUpdate(config, commandInput) {
         }
     }
 
-    // Fetch count
-    const searchUrl = `https://${cleanDomain}/rest/api/3/search/jql`;
+    // Fetch count using approximate-count endpoint
+    const countUrl = `https://${cleanDomain}/rest/api/3/search/approximate-count`;
 
     try {
-        const response = fetchWithRetry(searchUrl, {
+        const response = fetchWithRetry(countUrl, {
             method: 'POST',
             headers: {
                 "Authorization": authHeader,
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Accept": "application/json"
             },
-            payload: JSON.stringify({
-                jql: finalJql,
-                maxResults: 1,
-                fields: ["key"]
-            }),
+            payload: JSON.stringify({ jql: finalJql }),
             muteHttpExceptions: true
         }, config);
 
@@ -1086,11 +1096,10 @@ function previewBulkUpdate(config, commandInput) {
         }
 
         const data = JSON.parse(response.getContentText());
-        console.log("Preview Response:", JSON.stringify(data));
 
         return {
             jql: finalJql,
-            count: (data.total !== undefined) ? data.total : `(Debug: ${Object.keys(data).join(',')})`
+            count: data.count || 0
         };
 
     } catch (e) {
@@ -2086,9 +2095,6 @@ function generateRoadmap(options, sourceSheetName) {
                 // Save new config
                 sheetConfig.columns = currentCols.join(', ');
                 props.setProperty(configKey, JSON.stringify(sheetConfig));
-
-                // Loading feedback
-                ss.toast("Fetching missing columns for Roadmap...", "Auto-Config", 5);
 
                 // Fetch Data with new columns
                 const credsJson = props.getProperty('jira_creds');
@@ -3994,62 +4000,81 @@ function refreshAllJiraSheets(params) {
 }
 
 /**
- * Fetches all labels and their issue counts for the current context
+ * Fetches labels and their issue counts from issues on the active sheet
  */
 function getLabelStats(config) {
     if (!config.domain || !config.email || !config.token) {
         throw new Error("Missing Jira configuration.");
     }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = config.sourceSheet ? ss.getSheetByName(config.sourceSheet) : ss.getActiveSheet();
+    if (!sheet) throw new Error("No active sheet found.");
+
+    // Find the Key column (contains issue keys like PROJ-123)
+    const lastCol = sheet.getLastColumn();
+    if (lastCol === 0) throw new Error("Sheet is empty.");
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const keyColIndex = headers.findIndex(h => h && h.toString().trim().toLowerCase() === 'key');
+    if (keyColIndex === -1) throw new Error("No 'Key' column found in this sheet.");
+
+    // Get all issue keys from the sheet
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return {};
+    const keys = sheet.getRange(2, keyColIndex + 1, lastRow - 1, 1).getValues()
+        .map(r => r[0] ? r[0].toString().trim() : '')
+        .filter(k => k && k.match(/^[A-Z]+-\d+$/));
+
+    if (keys.length === 0) return {};
+
     const cleanDomain = config.domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const authHeader = "Basic " + Utilities.base64Encode(config.email + ":" + config.token);
-
-    // We always perform a global scan for labels regardless of sidebar JQL
-    const jql = "labels is not EMPTY";
     const searchUrl = `https://${cleanDomain}/rest/api/3/search/jql`;
     const stats = {};
-    let nextPageToken = null;
-    let pagesProcessed = 0;
 
+    // Query in batches of 100 keys
+    const BATCH_SIZE = 100;
     try {
-        while (true) {
-            const response = fetchJira(searchUrl, {
-                method: 'POST',
-                headers: {
-                    "Authorization": authHeader,
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                },
-                payload: JSON.stringify({
-                    jql: jql,
-                    nextPageToken: nextPageToken,
-                    maxResults: 100,
-                    fields: ["labels"]
-                }),
-                muteHttpExceptions: true
-            }, config);
+        for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+            const batch = keys.slice(i, i + BATCH_SIZE);
+            const jql = `key in (${batch.join(',')}) AND labels is not EMPTY`;
 
-            if (response.getResponseCode() !== 200) {
-                throw new Error(`Jira API Error: ${response.getContentText()}`);
-            }
+            let nextPageToken = null;
+            while (true) {
+                const response = fetchJira(searchUrl, {
+                    method: 'POST',
+                    headers: {
+                        "Authorization": authHeader,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    payload: JSON.stringify({
+                        jql: jql,
+                        nextPageToken: nextPageToken,
+                        maxResults: 100,
+                        fields: ["labels"]
+                    }),
+                    muteHttpExceptions: true
+                }, config);
 
-            const data = JSON.parse(response.getContentText());
-            const issues = data.issues || [];
-
-            if (issues.length === 0) break;
-
-            issues.forEach(issue => {
-                if (issue.fields && issue.fields.labels) {
-                    issue.fields.labels.forEach(label => {
-                        stats[label] = (stats[label] || 0) + 1;
-                    });
+                if (response.getResponseCode() !== 200) {
+                    throw new Error(`Jira API Error: ${response.getContentText()}`);
                 }
-            });
 
-            nextPageToken = data.nextPageToken;
-            pagesProcessed++;
+                const data = JSON.parse(response.getContentText());
+                const issues = data.issues || [];
 
-            // Break if no more tokens or safety limit (50 pages = 5000 issues)
-            if (!nextPageToken || issues.length === 0 || pagesProcessed >= 50) break;
+                issues.forEach(issue => {
+                    if (issue.fields && issue.fields.labels) {
+                        issue.fields.labels.forEach(label => {
+                            stats[label] = (stats[label] || 0) + 1;
+                        });
+                    }
+                });
+
+                nextPageToken = data.nextPageToken;
+                if (!nextPageToken || issues.length === 0) break;
+            }
         }
 
         return stats;

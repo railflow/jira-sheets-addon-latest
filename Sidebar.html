@@ -1228,6 +1228,7 @@
             const [refreshMode, setRefreshMode] = useState('interval'); // 'interval' or 'scheduled'
             const [labelsData, setLabelsData] = useState({});
             const [labelsSourceSheet, setLabelsSourceSheet] = useState('');
+            const [bulkUpdatePreview, setBulkUpdatePreview] = useState(null); // { jql, count, command }
             const [roadmapConfig, setRoadmapConfig] = useState({
                 startDateCol: '',
                 endDateCol: '',
@@ -2939,7 +2940,6 @@
                                             return;
                                         }
 
-                                        // Validate syntax start
                                         const isJqlu = command.trim().toUpperCase().startsWith('UPDATE');
                                         const isJson = command.trim().startsWith('{');
 
@@ -2951,20 +2951,44 @@
                                         setLoading(true);
                                         setStatus({ type: 'info', text: `Previewing update...` });
 
-                                        // 1. Preview first
                                         google.script.run
                                             .withSuccessHandler((previewRes) => {
+                                                setLoading(false);
                                                 if (previewRes.error) {
-                                                    setLoading(false);
                                                     setStatus({ type: 'error', text: previewRes.error });
                                                     return;
                                                 }
+                                                setStatus(null);
+                                                setBulkUpdatePreview({ jql: previewRes.jql, count: previewRes.count, command });
+                                            })
+                                            .withFailureHandler((err) => {
+                                                setLoading(false);
+                                                setStatus({ type: 'error', text: 'Preview failed: ' + err.message });
+                                            })
+                                            .previewBulkUpdate(config, command);
+                                    }} disabled={isRefreshing || bulkUpdatePreview}>
+                                        {isRefreshing ? 'Executing...' : 'Execute Update'}
+                                    </Button>
 
-                                                // 2. Confirm
-                                                if (confirm(`${previewRes.jql}\n\nwill update ${previewRes.count} records.\n\nAre you sure?`)) {
+                                    {bulkUpdatePreview && (
+                                        <div className="border border-orange-300 bg-orange-50 rounded-lg p-4 space-y-3 animation-fade-in">
+                                            <div className="flex items-start gap-2">
+                                                <i data-lucide="alert-triangle" className="w-5 h-5 text-orange-600 shrink-0 mt-0.5"></i>
+                                                <div className="space-y-1">
+                                                    <p className="text-sm font-semibold text-orange-900">Confirm Bulk Update</p>
+                                                    <p className="text-xs text-orange-800 font-mono bg-white/60 rounded px-2 py-1 break-all">{bulkUpdatePreview.jql}</p>
+                                                    <p className="text-sm text-orange-900">
+                                                        Will update <span className="font-bold">{bulkUpdatePreview.count}</span> records. Are you sure?
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Button className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={() => {
+                                                    const { command } = bulkUpdatePreview;
+                                                    setBulkUpdatePreview(null);
+                                                    setLoading(true);
                                                     setStatus({ type: 'info', text: `Executing bulk update...` });
 
-                                                    // 3. Execute
                                                     google.script.run
                                                         .withSuccessHandler((res) => {
                                                             setLoading(false);
@@ -2979,19 +3003,19 @@
                                                             setStatus({ type: 'error', text: 'Execution failed: ' + err.message });
                                                         })
                                                         .executeBulkUpdate(config, command);
-                                                } else {
-                                                    setLoading(false);
+                                                }}>
+                                                    <i data-lucide="check" className="w-4 h-4 mr-1"></i>
+                                                    Confirm
+                                                </Button>
+                                                <Button className="flex-1" variant="outline" onClick={() => {
+                                                    setBulkUpdatePreview(null);
                                                     setStatus({ type: 'info', text: 'Update cancelled.' });
-                                                }
-                                            })
-                                            .withFailureHandler((err) => {
-                                                setLoading(false);
-                                                setStatus({ type: 'error', text: 'Preview failed: ' + err.message });
-                                            })
-                                            .previewBulkUpdate(config, command);
-                                    }} disabled={isRefreshing}>
-                                        {isRefreshing ? 'Executing...' : 'Execute Update'}
-                                    </Button>
+                                                }}>
+                                                    Cancel
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )
