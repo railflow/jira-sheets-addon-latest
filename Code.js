@@ -283,7 +283,21 @@ function showSidebar(mode) {
  * Saves user configuration to Document Properties
  */
 function saveConfig(config) {
-    const props = PropertiesService.getDocumentProperties();
+    let props;
+    try {
+        props = PropertiesService.getDocumentProperties();
+        // Trigger a read to verify access before writing
+        props.getKeys();
+    } catch (e) {
+        // Retry once after a short delay (intermittent GAS document context issue)
+        Utilities.sleep(1000);
+        try {
+            props = PropertiesService.getDocumentProperties();
+            props.getKeys();
+        } catch (e2) {
+            throw new Error('Could not access document properties. Make sure you have edit access to this spreadsheet. (' + e2.message + ')');
+        }
+    }
     const sheetId = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getSheetId();
 
     // Save Credentials Globally
