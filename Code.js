@@ -5,7 +5,7 @@
 
 const APP_TITLE = "Sync Sheets for JIRA";
 const APP_VERSION = "2.0.0";
-const BUILD_DATE = "2026-03-09 12:37:43 America/Los_Angeles";
+const BUILD_DATE = "2026-03-09 12:37:43";
 const CLOUDFLARE_WORKER_URL = "https://jira-proxy.railflow.workers.dev"; // Bakes the proxy URL into the addon
 const PROXY_SECRET = "jira-sheets-secret-2026"; // Must match the secret in cloudflare_worker.js
 
@@ -247,14 +247,11 @@ function showLicense() {
 }
 
 function showAbout() {
-    const license = checkLicense();
-    const planLabel = license.plan ? license.plan.charAt(0).toUpperCase() + license.plan.slice(1) : 'Free';
     const html = HtmlService.createHtmlOutput(
         '<div style="font-family:Google Sans,Arial,sans-serif;padding:20px;">' +
         '<h2 style="margin:0 0 16px;">' + APP_TITLE + '</h2>' +
         '<p style="margin:6px 0;color:#555;">Version: <strong>' + APP_VERSION + '</strong></p>' +
         '<p style="margin:6px 0;color:#555;">Build Date: <strong>' + BUILD_DATE + '</strong></p>' +
-        '<p style="margin:6px 0;color:#555;">License: <strong>' + planLabel + '</strong></p>' +
         '</div>'
     )
     .setWidth(400)
