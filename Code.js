@@ -5,7 +5,7 @@
 
 const APP_TITLE = "Sync Sheets for JIRA";
 const APP_VERSION = "2.0.0";
-const BUILD_DATE = "2026-03-02 00:51:13 PST";
+const BUILD_DATE = "2026-03-09 12:37:43 America/Los_Angeles";
 const CLOUDFLARE_WORKER_URL = "https://jira-proxy.railflow.workers.dev"; // Bakes the proxy URL into the addon
 const PROXY_SECRET = "jira-sheets-secret-2026"; // Must match the secret in cloudflare_worker.js
 

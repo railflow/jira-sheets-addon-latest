@@ -5,7 +5,7 @@
     "main": "Code.js",
     "scripts": {
         "login": "clasp login",
-        "push": "clasp push",
+        "push": "node -e \"const fs=require('fs');const d=new Date();const pad=n=>String(n).padStart(2,'0');const offset=-d.getTimezoneOffset();const sign=offset>=0?'+':'-';const h=Math.floor(Math.abs(offset)/60);const m=Math.abs(offset)%60;const tz=sign+pad(h)+':'+pad(m);const stamp=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())+' '+Intl.DateTimeFormat().resolvedOptions().timeZone;let c=fs.readFileSync('Code.js','utf8');c=c.replace(/const BUILD_DATE = \\\".*?\\\";/,'const BUILD_DATE = \\\"'+stamp+'\\\";');fs.writeFileSync('Code.js',c);\" && clasp push",
         "pull": "clasp pull",
         "deploy": "clasp deploy",
         "open": "clasp open",
