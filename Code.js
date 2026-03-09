@@ -440,7 +440,8 @@ function testConnection(config) {
     };
 
     try {
-        const response = fetchWithRetry(url, options, config);
+        // Always test directly — proxy bypass not needed for credential validation
+        const response = fetchWithRetry(url, options, { ...config, useCloudflare: false });
         if (response.getResponseCode() === 200) {
             const data = JSON.parse(response.getContentText());
             return { success: true, message: `Connected as ${data.displayName}` };
