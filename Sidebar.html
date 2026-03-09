@@ -1163,6 +1163,18 @@
                 }
             }, [status]);
 
+            const detectMultipleSessions = async () => {
+                try {
+                    const res = await fetch('https://accounts.google.com/ListAccounts?gpsia=1&source=ogb&json=standard', { credentials: 'include' });
+                    const text = await res.text();
+                    const jsonStr = text.startsWith(")]}'") ? text.slice(5) : text;
+                    const data = JSON.parse(jsonStr);
+                    return Array.isArray(data[1]) && data[1].length > 1;
+                } catch (e) {
+                    return false;
+                }
+            };
+
             const loadLicenseInfo = async (silent = true) => {
                 try {
                     const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/license/check`, {
@@ -1437,8 +1449,16 @@
                         // Redirect to Issues tab after a short delay
                         setTimeout(() => setActiveTab('issues'), 800);
                     })
-                    .withFailureHandler(err => {
-                        setStatus({ type: 'error', text: 'Save failed: ' + err.message });
+                    .withFailureHandler(async (err) => {
+                        if (err.message && err.message.includes('PERMISSION_DENIED')) {
+                            const hasMultiple = await detectMultipleSessions();
+                            const msg = hasMultiple
+                                ? 'Multiple open sessions detected. Please login with a single Google session for proper functioning of the addon.'
+                                : 'Authorization error. Please close the sidebar, reopen it, and re-authorize when prompted.';
+                            setStatus({ type: 'error', text: msg });
+                        } else {
+                            setStatus({ type: 'error', text: 'Save failed: ' + err.message });
+                        }
                         setLoading(false);
                     })
                     .saveConfig(config);
@@ -1451,8 +1471,16 @@
                         setConnectionTest({ success: true, msg: res.message });
                         if (window.posthog) posthog.capture('sheets.config.connection_tested');
                     })
-                    .withFailureHandler((err) => {
-                        setConnectionTest({ success: false, msg: err.message });
+                    .withFailureHandler(async (err) => {
+                        if (err.message && err.message.includes('PERMISSION_DENIED')) {
+                            const hasMultiple = await detectMultipleSessions();
+                            const msg = hasMultiple
+                                ? 'Multiple open sessions detected. Please login with a single Google session for proper functioning of the addon.'
+                                : 'Authorization error. Please close the sidebar, reopen it, and re-authorize when prompted.';
+                            setConnectionTest({ success: false, msg });
+                        } else {
+                            setConnectionTest({ success: false, msg: err.message });
+                        }
                     })
                     .testConnection(config);
             };
