@@ -4688,6 +4688,10 @@ function fetchWithRetry(url, options, config) {
                 console.warn(`UrlFetchApp rate limit hit. Sleeping... Attempt ${attempt + 1}/${maxRetries}`);
                 Utilities.sleep(1000 * Math.pow(2, attempt)); // 1s, 2s, 4s
                 attempt++;
+            } else if (errorStr.includes("PERMISSION_DENIED") && attempt < maxRetries - 1) {
+                console.warn(`UrlFetchApp PERMISSION_DENIED (GAS transient error). Retrying... Attempt ${attempt + 1}/${maxRetries}`);
+                Utilities.sleep(1000);
+                attempt++;
             } else {
                 throw e;
             }
