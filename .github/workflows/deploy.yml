@@ -39,13 +39,11 @@ jobs:
       - name: Push to Apps Script
         run: clasp push --force
 
-      - name: Create new version (on manual deploy)
-        if: github.event.inputs.deploy_type == 'deploy'
+      - name: Create new version
         run: |
           VERSION_DESC="Automated deployment from GitHub Actions - $(date +'%Y-%m-%d %H:%M:%S')"
           clasp version "$VERSION_DESC"
 
-      - name: Deploy as Add-on (on manual deploy)
-        if: github.event.inputs.deploy_type == 'deploy'
+      - name: Deploy as Add-on
         run: |
           clasp deploy --description "Production deployment - $(date +'%Y-%m-%d')"
