@@ -41,7 +41,7 @@ jobs:
 
       - name: Create new version
         run: |
-          VERSION_DESC="2.0.${{ github.run_number }}"
+          VERSION_DESC="2.0.3"
           clasp version "$VERSION_DESC"
 
       - name: Deploy as Add-on
