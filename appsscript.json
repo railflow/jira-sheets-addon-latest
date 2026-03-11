@@ -18,7 +18,7 @@
   "addOns": {
     "common": {
       "name": "Jira Sync for Sheets",
-      "logoUrl": "https://raw.githubusercontent.com/your-repo/jira-sheets-addon/main/assets/icon-128x128.png",
+      "logoUrl": "https://lh3.googleusercontent.com/cjUkfZEK7OaEaJjsQ75AS6KabfE3ct8iiazdfrDB3Ar-o2MYeGbQ",
       "homepageTrigger": {
         "runFunction": "onHomepage"
       }

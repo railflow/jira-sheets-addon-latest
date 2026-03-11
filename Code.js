@@ -10,8 +10,7 @@ const CLOUDFLARE_WORKER_URL = "https://jira-proxy.railflow.workers.dev"; // Bake
 const PROXY_SECRET = "jira-sheets-secret-2026"; // Must match the secret in cloudflare_worker.js
 
 function onOpen() {
-    SpreadsheetApp.getUi()
-        .createMenu(APP_TITLE)
+    SpreadsheetApp.getUi().createAddonMenu()
         .addItem('⚙︎ JIRA Configuration', 'showConfig')
         .addItem('▦ JIRA Issues', 'showIssues')
         .addItem('✚ Bulk Create Issues', 'showBulkCreate')
@@ -254,8 +253,8 @@ function showAbout() {
         '<p style="margin:6px 0;color:#555;">Build Date: <strong>' + BUILD_DATE + '</strong></p>' +
         '</div>'
     )
-    .setWidth(400)
-    .setHeight(220);
+        .setWidth(400)
+        .setHeight(220);
     SpreadsheetApp.getUi().showModalDialog(html, 'About');
 }
 
