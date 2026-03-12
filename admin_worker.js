@@ -168,6 +168,15 @@ async function handleData(request, env) {
     priceInfo:      u.price_id ? PRICE_MAP[u.price_id] : null,
   }));
 
+  // Compute logins before domains so domain user lists can use login_events
+  const logins = (loginsRes.results || []).map(l => ({
+    email:     l.email,
+    firstSeen: l.first_seen,
+    lastSeen:  l.last_seen,
+    count:     l.visit_count,
+    plan:      l.plan,
+  }));
+
   const domains = (domainsRes.results || []).map(d => ({
     domain:         d.domain,
     email:          d.email,
@@ -183,19 +192,23 @@ async function handleData(request, env) {
     seats:          d.seats,
     lastUpdated:    d.last_updated,
     priceInfo:      d.price_id ? PRICE_MAP[d.price_id] : null,
-    users:          users.filter(u => u.email.split('@')[1] === d.domain),
+    // Use login_events to count all users who have actually used the product under this domain
+    users: logins
+      .filter(l => l.email.split('@')[1] === d.domain)
+      .map(l => ({
+        email:     l.email,
+        plan:      d.plan,
+        planLabel: normalizePlan(d.plan),
+        status:    d.status,
+        renewsAt:  d.renews_at,
+        amount:    d.amount,
+        priceInfo: d.price_id ? PRICE_MAP[d.price_id] : null,
+        lastSeen:  l.lastSeen,
+      })),
   }));
 
   const domainSet   = new Set(domains.map(d => d.domain));
   const individuals = users.filter(u => !domainSet.has(u.email.split('@')[1]));
-
-  const logins = (loginsRes.results || []).map(l => ({
-    email:     l.email,
-    firstSeen: l.first_seen,
-    lastSeen:  l.last_seen,
-    count:     l.visit_count,
-    plan:      l.plan,
-  }));
 
   const sales = (salesRes.results || []).map(s => ({
     date:         s.created_at,
