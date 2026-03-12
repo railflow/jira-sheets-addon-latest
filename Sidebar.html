@@ -364,21 +364,6 @@
         };
         // LICENSE PANEL COMPONENT
         const LicensePanel = ({ license, setLicense, setStatus, loadLicenseInfo }) => {
-            const handleManageSubscription = () => {
-                setStatus({ type: 'info', text: 'Opening subscription portal...' });
-                google.script.run
-                    .withSuccessHandler((result) => {
-                        if (result.url) {
-                            window.open(result.url, '_blank');
-                            setStatus({ type: 'success', text: 'Portal opened in new tab' });
-                        }
-                    })
-                    .withFailureHandler((err) => {
-                        setStatus({ type: 'error', text: err.message });
-                    })
-                    .createManageSubscriptionSession();
-            };
-
             const plan = license?.plan;
             const isPaidPlan = plan === PLANS.PRO || plan === PLANS.ENTERPRISE;
 
@@ -469,30 +454,20 @@
 
                     </div>
 
-                    {/* Pro Actions */}
-                    {
-                        isPaidPlan ? (
-                            <div className="space-y-2">
-                                <Button className="w-full" variant="outline" onClick={handleManageSubscription}>
-                                    <i data-lucide="settings" className="w-4 h-4 mr-2"></i>
-                                    Manage Subscription
-                                </Button>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 text-center space-y-3">
-                                    <i data-lucide="external-link" className="w-8 h-8 mx-auto text-blue-500"></i>
-                                    <p className="text-sm font-medium">Purchase a license at</p>
-                                    <p className="text-sm font-bold text-blue-700">sheetsync.dev</p>
-                                    <p className="text-xs text-muted-foreground">Use your Google account email ({USER_EMAIL}) at checkout. Your license will activate automatically.</p>
-                                </div>
-                                <Button className="w-full" variant="outline" size="sm" onClick={() => loadLicenseInfo()}>
-                                    <i data-lucide="refresh-cw" className="w-4 h-4 mr-2"></i>
-                                    Refresh License Status
-                                </Button>
-                            </div>
-                        )
-                    }
+                    {/* Actions */}
+                    <Button className="w-full" variant="outline" size="sm" onClick={() => loadLicenseInfo()}>
+                        <i data-lucide="refresh-cw" className="w-4 h-4 mr-2"></i>
+                        Refresh License Status
+                    </Button>
+
+                    {!isPaidPlan && (
+                        <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 text-center space-y-2">
+                            <i data-lucide="external-link" className="w-8 h-8 mx-auto text-blue-500"></i>
+                            <p className="text-sm font-medium">Purchase a license at</p>
+                            <p className="text-sm font-bold text-blue-700">sheetsync.dev</p>
+                            <p className="text-xs text-muted-foreground">Use your Google account email ({USER_EMAIL}) at checkout. Your license will activate automatically.</p>
+                        </div>
+                    )}
 
                 </div >
             );
