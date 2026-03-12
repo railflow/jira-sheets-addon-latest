@@ -216,7 +216,7 @@ async function handleStripeWebhook(request, env) {
             const session = event.data.object;
             const email   = session.metadata?.email || session.customer_details?.email;
             const plan    = session.metadata?.plan || "pro";
-            const domain  = session.metadata?.domain;
+            const domain  = session.metadata?.domain || null;
             if (!email) { console.error("[Webhook] No email in session"); return okJson({ received: true }); }
 
             // Fetch subscription for renewal date + price
@@ -275,29 +275,47 @@ async function handleStripeWebhook(request, env) {
 
         // ── customer.subscription.updated ───────────────────────────────────
         if (event.type === "customer.subscription.updated") {
-            const sub   = event.data.object;
-            const email = sub.metadata?.email;
+            const sub    = event.data.object;
+            const email  = sub.metadata?.email;
+            const domain = sub.metadata?.domain || null;
             if (email && env.DB) {
                 const renewsAt = new Date(sub.current_period_end * 1000).toISOString();
                 const priceId  = sub.items?.data?.[0]?.price?.id || null;
                 const active   = sub.status === "active" || sub.status === "trialing" ? 1 : 0;
+                const now      = new Date().toISOString();
                 await env.DB.prepare(`
                     UPDATE user_licenses
                     SET status = ?, allowed = ?, renews_at = ?, price_id = COALESCE(?, price_id), last_updated = ?
                     WHERE email = ?
-                `).bind(sub.status, active, renewsAt, priceId, new Date().toISOString(), email.toLowerCase()).run();
+                `).bind(sub.status, active, renewsAt, priceId, now, email.toLowerCase()).run();
+                if (domain) {
+                    await env.DB.prepare(`
+                        UPDATE domain_licenses
+                        SET status = ?, allowed = ?, renews_at = ?, price_id = COALESCE(?, price_id), last_updated = ?
+                        WHERE domain = ?
+                    `).bind(sub.status, active, renewsAt, priceId, now, domain.toLowerCase()).run();
+                    console.log(`[Webhook] Domain license updated for ${domain}: ${sub.status}`);
+                }
                 console.log(`[Webhook] Subscription updated for ${email}: ${sub.status}`);
             }
         }
 
         // ── customer.subscription.deleted ───────────────────────────────────
         if (event.type === "customer.subscription.deleted") {
-            const sub   = event.data.object;
-            const email = sub.metadata?.email;
+            const sub    = event.data.object;
+            const email  = sub.metadata?.email;
+            const domain = sub.metadata?.domain || null;
             if (email && env.DB) {
+                const now = new Date().toISOString();
                 await env.DB.prepare(`
                     UPDATE user_licenses SET allowed = 0, status = 'canceled', last_updated = ? WHERE email = ?
-                `).bind(new Date().toISOString(), email.toLowerCase()).run();
+                `).bind(now, email.toLowerCase()).run();
+                if (domain) {
+                    await env.DB.prepare(`
+                        UPDATE domain_licenses SET allowed = 0, status = 'canceled', last_updated = ? WHERE domain = ?
+                    `).bind(now, domain.toLowerCase()).run();
+                    console.log(`[De-provisioning] Domain license canceled: ${domain}`);
+                }
                 console.log(`[De-provisioning] License canceled: ${email}`);
             }
         }
