@@ -29,6 +29,10 @@ function onOpen() {
         .addToUi();
 }
 
+function onInstall() {
+    onOpen();
+}
+
 /**
  * Tracks user edits to identify rows for bulk updates.
  */
