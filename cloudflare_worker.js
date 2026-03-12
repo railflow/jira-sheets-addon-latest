@@ -22,7 +22,7 @@ export default {
             });
         }
 
-        if (path === "/api/license/check")        return handleLicenseCheck(request, env);
+        if (path === "/api/license/check")        return handleLicenseCheck(request, env, ctx);
         if (path === "/api/stripe/create-session") return handleStripeSession(request, env);
         if (path === "/api/stripe/webhook")        return handleStripeWebhook(request, env);
         if (path === "/api/stripe/portal")         return handleStripePortal(request, env);
@@ -47,12 +47,13 @@ function okJson(data)       { return new Response(JSON.stringify(data), { header
 function errJson(msg, code) { return new Response(JSON.stringify({ error: msg }), { status: code, headers: CORS }); }
 
 /**
- * Fire-and-forget login event upsert — does not block the license response.
+ * Login event upsert — registered with ctx.waitUntil so the D1 write
+ * completes even after the response is sent.
  */
-function logLogin(env, email, plan) {
+function logLogin(env, ctx, email, plan) {
     if (!env.DB) return;
     const now = new Date().toISOString();
-    env.DB.prepare(`
+    const p = env.DB.prepare(`
         INSERT INTO login_events (email, first_seen, last_seen, visit_count, plan)
         VALUES (?, ?, ?, 1, ?)
         ON CONFLICT(email) DO UPDATE SET
@@ -60,11 +61,12 @@ function logLogin(env, email, plan) {
             visit_count = visit_count + 1,
             plan        = excluded.plan
     `).bind(email, now, now, plan || "free").run().catch(() => {});
+    ctx?.waitUntil(p);
 }
 
 // ─── License Check ────────────────────────────────────────────────────────────
 
-async function handleLicenseCheck(request, env) {
+async function handleLicenseCheck(request, env, ctx) {
     try {
         const body = await request.json();
         const email = body?.email;
@@ -83,7 +85,7 @@ async function handleLicenseCheck(request, env) {
             .bind(emailLower).first();
 
         if (user) {
-            logLogin(env, emailLower, user.plan);
+            logLogin(env, ctx, emailLower, user.plan);
             return okJson({
                 allowed:      !!user.allowed,
                 plan:         user.plan,
@@ -107,7 +109,7 @@ async function handleLicenseCheck(request, env) {
 
             if (dom) {
                 const allowed = dom.status === "active" || dom.status === "trialing";
-                logLogin(env, emailLower, dom.plan);
+                logLogin(env, ctx, emailLower, dom.plan);
                 return okJson({
                     allowed,
                     plan:         dom.plan,
@@ -125,7 +127,7 @@ async function handleLicenseCheck(request, env) {
         }
 
         // 3. Free / no license
-        logLogin(env, emailLower, "free");
+        logLogin(env, ctx, emailLower, "free");
         return okJson({ allowed: false, plan: "free", status: "none", email: emailLower, message: "No active license found." });
 
     } catch (e) {
