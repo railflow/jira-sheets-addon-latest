@@ -301,6 +301,8 @@ const S = {
   drawer: null,         // { mode:'add'|'edit', type:'user'|'domain', fields:{...} }
   drawerErr: null,
   drawerSaving: false,
+  activitySearch: '',
+  activitySort: { col: 'lastSeen', dir: 'desc' },
 };
 
 // ── Utils ────────────────────────────────────────────────────────────────────
@@ -621,22 +623,51 @@ function renderDomainCard(d) {
 
 // ── Tab: Activity ─────────────────────────────────────────────────────────────
 function renderActivity() {
-  const logins = S.data.logins;
+  const q = S.activitySearch.toLowerCase();
+  const { col, dir } = S.activitySort;
+
+  let logins = S.data.logins.map(l => ({ ...l, domain: l.email.split('@')[1] || '' }));
+  if (q) logins = logins.filter(l => l.email.includes(q) || l.domain.includes(q));
+  logins = [...logins].sort((a, b) => {
+    const av = col === 'count' ? (a[col] || 0) : (a[col] || '');
+    const bv = col === 'count' ? (b[col] || 0) : (b[col] || '');
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const sh = (c, label, align) => {
+    const arrow = col === c ? (dir === 'asc' ? '↑' : '↓') : '⇅';
+    const arrowColor = col === c ? '#60a5fa' : '#374151';
+    const ta = align ? \`text-align:\${align};\` : '';
+    return \`<th style="cursor:pointer;user-select:none;\${ta}" onclick="sortActivity('\${c}')">\${label} <span style="color:\${arrowColor}">\${arrow}</span></th>\`;
+  };
+
   return \`
   <div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
       <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin:0;">Login Activity</h2>
-      <span style="color:#64748b;font-size:13px;">\${logins.length} unique user\${logins.length!==1?'s':''}</span>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <input type="search" id="activitySearch" placeholder="Filter by email or domain…" value="\${esc(S.activitySearch)}"
+          style="width:240px;" oninput="S.activitySearch=this.value;renderContent();" />
+        <span style="color:#64748b;font-size:13px;">\${logins.length} user\${logins.length!==1?'s':''}</span>
+      </div>
     </div>
     \${logins.length ? \`
     <div class="panel">
       <table class="tbl">
         <thead><tr>
-          <th>Email</th><th>Plan</th><th>First Seen</th><th>Last Seen</th><th style="text-align:right;">Visits</th>
+          \${sh('email','Email')}
+          \${sh('domain','Domain')}
+          \${sh('plan','Plan')}
+          \${sh('firstSeen','First Seen')}
+          \${sh('lastSeen','Last Seen')}
+          \${sh('count','Visits','right')}
         </tr></thead>
         <tbody>
           \${logins.map(l => \`<tr>
             <td style="font-family:monospace;color:#93c5fd;">\${esc(l.email)}</td>
+            <td style="color:#94a3b8;">\${esc(l.domain)}</td>
             <td>\${planBadge(normPlan(l.plan))}</td>
             <td style="color:#94a3b8;font-size:12px;">\${fmtDateTime(l.firstSeen)}</td>
             <td style="color:#94a3b8;font-size:12px;">\${fmtDateTime(l.lastSeen)}</td>
@@ -645,7 +676,7 @@ function renderActivity() {
         </tbody>
       </table>
     </div>\` : \`
-    <div style="text-align:center;padding:60px 20px;color:#475569;">No login activity recorded yet.</div>\`}
+    <div style="text-align:center;padding:60px 20px;color:#475569;">\${q ? \`No results for "\${esc(q)}"\` : 'No login activity recorded yet.'}</div>\`}
   </div>\`;
 }
 
@@ -827,7 +858,16 @@ async function deleteLicense(type, keyObj) {
 }
 
 // ── Interactions ──────────────────────────────────────────────────────────────
-function setTab(tab) { S.tab = tab; renderContent(); }
+function setTab(tab) { S.tab = tab; render(); }
+
+function sortActivity(col) {
+  if (S.activitySort.col === col) {
+    S.activitySort.dir = S.activitySort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    S.activitySort = { col, dir: col === 'count' ? 'desc' : 'asc' };
+  }
+  renderContent();
+}
 
 function toggleDomain(domain) {
   if (S.expandedDomains.has(domain)) S.expandedDomains.delete(domain);
