@@ -519,10 +519,9 @@ function fetchJiraData(params) {
     // Initialize proxy counter for this fetch
     params.proxyCallCount = 0;
 
-    // Determine Pro status if not provided (e.g. background trigger)
-    if (typeof params.isPro === 'undefined') {
+    if (typeof params.plan === 'undefined') {
         const license = checkLicense();
-        params.isPro = license.allowed && license.plan !== 'free';
+        params.plan = license.allowed ? (license.plan || PLANS.STARTER) : PLANS.STARTER;
     }
 
     // Default columns if empty
@@ -634,8 +633,8 @@ function fetchJiraData(params) {
         issues = issues.concat(batch);
         startAt += batch.length;
 
-        // FREE VERSION LIMIT: 150 Issues
-        if (!params.isPro && issues.length >= 150) {
+        // STARTER LIMIT: 150 Issues
+        if (params.plan === PLANS.STARTER && issues.length >= 150) {
             issues = issues.slice(0, 150);
             params.limited = true; // Mark as limited for UI
             break;
@@ -1717,14 +1716,13 @@ function getSelectedRowsData() {
 function createJiraIssues(params, creates) {
     if (!creates || creates.length === 0) return { success: true, count: 0, types: {} };
 
-    // Determine Pro status if not provided
-    if (params && typeof params.isPro === 'undefined') {
+    if (params && typeof params.plan === 'undefined') {
         const license = checkLicense();
-        params.isPro = license.allowed && license.plan !== 'free';
+        params.plan = license.allowed ? (license.plan || PLANS.STARTER) : PLANS.STARTER;
     }
 
     let isLimited = false;
-    if (!params.isPro && creates.length > 150) {
+    if (params.plan === PLANS.STARTER && creates.length > 150) {
         creates = creates.slice(0, 150);
         isLimited = true;
     }
@@ -3578,12 +3576,20 @@ const LICENSE_API_URL = CLOUDFLARE_WORKER_URL + '/api/license/check';
 const CHECKOUT_API_URL = CLOUDFLARE_WORKER_URL + '/api/stripe/create-session';
 const PORTAL_API_URL = CLOUDFLARE_WORKER_URL + '/api/stripe/portal'; // Future use
 
+const PLANS = {
+    STARTER:    'starter',
+    PRO:        'pro',
+    ENTERPRISE: 'enterprise',
+};
+
 // Stripe Price IDs - UPDATE THESE with your Stripe price IDs
 const STRIPE_PRICES = {
-    PRO_MONTHLY: 'price_0T06lCPaYAnupERfYwY8d95p',
-    PRO_YEARLY: 'price_0T06jnPaYAnupERfQTenhkHV',
-    ENTERPRISE_MONTHLY: 'price_1T6PvIDhvP6DurKSCrisUWHI',
-    ENTERPRISE_YEARLY: 'price_1T6PvVDhvP6DurKSHcVjbbC2'
+    STARTER_MONTHLY:      'price_1T6S0JDhvP6DurKScZ69xlBd',
+    STARTER_YEARLY:       'price_1T334WDhvP6DurKS3ozSbzwW',
+    PRO_MONTHLY:          'price_1T6PtuDhvP6DurKSeJveH6Jc',
+    PRO_YEARLY:           'price_1T6PtuDhvP6DurKSHIFeZaFV',
+    ENTERPRISE_MONTHLY:   'price_1T6PvIDhvP6DurKSCrisUWHI',
+    ENTERPRISE_YEARLY:    'price_1T6PvVDhvP6DurKSHcVjbbC2',
 };
 
 /**
@@ -3594,7 +3600,7 @@ function checkLicense(forceRefresh = false) {
     const userEmail = Session.getActiveUser().getEmail();
 
     if (!userEmail) {
-        return { allowed: false, plan: 'free', message: 'Unable to determine user email' };
+        return { allowed: false, plan: PLANS.STARTER, message: 'Unable to determine user email' };
     }
 
     try {
@@ -3608,11 +3614,11 @@ function checkLicense(forceRefresh = false) {
         if (response.getResponseCode() === 200) {
             return JSON.parse(response.getContentText());
         } else {
-            return { allowed: true, plan: 'Trial', message: 'API Offline' }; // Graceful fallback
+            return { allowed: true, plan: PLANS.PRO, message: 'API Offline' };
         }
     } catch (e) {
         console.error('License check error:', e);
-        return { allowed: true, plan: 'Trial', message: 'Connection Error' };
+        return { allowed: true, plan: PLANS.PRO, message: 'Connection Error' };
     }
 }
 
@@ -3627,7 +3633,7 @@ function getLicenseInfo(forceRefresh = false) {
     return {
         email: userEmail,
         allowed: license.allowed,
-        plan: license.plan || 'free',
+        plan: license.plan || PLANS.STARTER,
         status: license.status || 'none',
         licenseType: license.licenseType || 'none',
         domain: license.domain || null,
@@ -3719,11 +3725,22 @@ function createManageSubscriptionSession() {
  */
 function getPricingInfo() {
     return {
-        individual: {
-            name: 'Personal License',
-            description: 'Individual Pro license',
-            monthly: { price: '$9/month', priceId: STRIPE_PRICES.PRO_MONTHLY, value: 9 },
-            yearly: { price: '$89/year', priceId: STRIPE_PRICES.PRO_YEARLY, value: 89 },
+        starter: {
+            name: 'Starter',
+            description: 'For individuals getting started',
+            monthly: { price: '$1/month',  priceId: STRIPE_PRICES.STARTER_MONTHLY, value: 1 },
+            yearly:  { price: '$9/year',   priceId: STRIPE_PRICES.STARTER_YEARLY,  value: 9 },
+            features: [
+                'Unlimited syncs',
+                'Basic filters',
+                'Email support'
+            ]
+        },
+        professional: {
+            name: 'Professional',
+            description: 'For power users',
+            monthly: { price: '$9/month',  priceId: STRIPE_PRICES.PRO_MONTHLY, value: 9 },
+            yearly:  { price: '$75/year',  priceId: STRIPE_PRICES.PRO_YEARLY,  value: 75 },
             features: [
                 'Unlimited syncs',
                 'Priority support',
@@ -3733,10 +3750,10 @@ function getPricingInfo() {
             ]
         },
         enterprise: {
-            name: 'Enterprise License',
+            name: 'Enterprise',
             description: 'Best for large orgs',
-            monthly: { price: '$345/month', priceId: STRIPE_PRICES.ENTERPRISE_MONTHLY, value: 345 },
-            yearly: { price: '$2900/year', priceId: STRIPE_PRICES.ENTERPRISE_YEARLY, value: 2900 },
+            monthly: { price: '$345/month',  priceId: STRIPE_PRICES.ENTERPRISE_MONTHLY, value: 345 },
+            yearly:  { price: '$2900/year',  priceId: STRIPE_PRICES.ENTERPRISE_YEARLY,  value: 2900 },
             features: [
                 'Unlimited users',
                 'Domain-wide access',
@@ -4025,10 +4042,9 @@ function refreshAllJiraSheets(params) {
     const refreshedSheets = [];
     params.proxyCallCount = 0; // Initialize counter for the entire batch
 
-    // Determine Pro status if not provided (e.g. background trigger)
-    if (typeof params.isPro === 'undefined') {
+    if (typeof params.plan === 'undefined') {
         const license = checkLicense();
-        params.isPro = license.allowed && license.plan !== 'free';
+        params.plan = license.allowed ? (license.plan || PLANS.STARTER) : PLANS.STARTER;
     }
 
     // Filter properties for sheet configs
@@ -4707,7 +4723,7 @@ function updateJiraIssuesBatched(params, updates, context = {}) {
     if (!updates || updates.length === 0) return { success: true, count: 0 };
 
     let isLimited = false;
-    if (!params.isPro && updates.length > 150) {
+    if (params.plan === PLANS.STARTER && updates.length > 150) {
         updates = updates.slice(0, 150);
         isLimited = true;
     }
@@ -4744,14 +4760,13 @@ function updateJiraIssuesBatched(params, updates, context = {}) {
         if (json) modifiedMap = JSON.parse(json);
     } catch (err) { }
 
-    // Determine Pro status if not provided
-    if (params && typeof params.isPro === 'undefined') {
+    if (params && typeof params.plan === 'undefined') {
         const license = checkLicense();
-        params.isPro = license.allowed && license.plan !== 'free';
+        params.plan = license.allowed ? (license.plan || PLANS.STARTER) : PLANS.STARTER;
     }
 
     // Dynamic Batching Configuration based on Proxy status
-    const isProxy = params && params.useCloudflare && params.isPro;
+    const isProxy = params && params.useCloudflare && (params.plan === PLANS.PRO || params.plan === PLANS.ENTERPRISE);
     const BATCH_SIZE = isProxy ? 50 : 5; // Aggressive for proxy, conservative for direct
     const sleepBetweenBatches = isProxy ? 200 : 1000;
     const sleepBetweenRequests = isProxy ? 0 : 250;

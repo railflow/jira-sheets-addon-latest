@@ -173,6 +173,7 @@
         const INITIAL_MODE = "<?= initialMode ?>";
         const USER_EMAIL = "<?= userEmail ?>";
         const CLOUDFLARE_WORKER_URL = "https://jira-proxy.railflow.workers.dev";
+        const PLANS = { STARTER: 'starter', PRO: 'pro', ENTERPRISE: 'enterprise' };
 
         /* --- COMPONENTS --- */
         const cn = (...classes) => classes.filter(Boolean).join(' ');
@@ -361,188 +362,8 @@
                 </div>
             );
         };
-        // CHECKOUT PANEL COMPONENT
-        const CheckoutPanel = ({ email, plan, priceId, price, domain, seats, onCancel, onSuccess, setStatus }) => {
-            const [loading, setLoading] = useState(false);
-            const [stripe, setStripe] = useState(null);
-            const [elements, setElements] = useState(null);
-            const [clientSecret, setClientSecret] = useState(null);
-
-            useEffect(() => {
-                // Initialize Stripe
-                if (window.Stripe) {
-                    setStripe(window.Stripe('pk_live_placeholder')); // User will replace or we'll fetch
-                }
-            }, []);
-
-            const handlePay = async (e) => {
-                if (e) e.preventDefault();
-                if (window.posthog) posthog.capture('sheets.license.payment_initiated', { plan });
-
-                // Open window immediately to avoid popup blockers
-                const checkoutWindow = window.open('about:blank', '_blank');
-                if (!checkoutWindow) {
-                    setStatus({ type: 'error', text: 'Popup blocked! Please allow popups to continue to payment.' });
-                    return;
-                }
-                checkoutWindow.document.write('<!DOCTYPE html><html><head><title>Redirecting...</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f8fafc;color:#1e293b;}</style></head><body><div style="text-align:center;"><p>Redirecting to Secure Checkout...</p></div></body></html>');
-
-                setLoading(true);
-                try {
-                    const workerUrl = CLOUDFLARE_WORKER_URL;
-                    const res = await fetch(`${workerUrl}/api/stripe/create-session`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            email: USER_EMAIL,
-                            plan,
-                            priceId,
-                            domain: domain,
-                            seats: seats
-                        })
-                    });
-                    const data = await res.json();
-
-                    if (data.url) {
-                        checkoutWindow.location.href = data.url;
-                    } else if (data.error) {
-                        checkoutWindow.close();
-                        const errorDetails = `Checkout Creation Error: ${data.error}\nParams: ${JSON.stringify({ plan, priceId, domain, seats })}`;
-                        google.script.run.logRefreshAttempt('ERROR', errorDetails, 'Checkout');
-                        setStatus({ type: 'error', text: 'Stripe Error: ' + data.error + '. See "☰ Logs" for details.' });
-                    }
-                } catch (err) {
-                    if (checkoutWindow) checkoutWindow.close();
-                    const errorDetails = `Failed to start checkout: ${err.message}\nStack: ${err.stack || 'N/A'}`;
-                    google.script.run.logRefreshAttempt('ERROR', errorDetails, 'Checkout');
-                    setStatus({ type: 'error', text: 'Failed to start checkout: ' + err.message + '. See "☰ Logs" for details.' });
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            return (
-                <div className="space-y-4 p-4 border rounded-xl bg-white shadow-sm animation-slide-up">
-                    <div className="flex items-center justify-between border-b pb-2">
-                        <h3 className="font-bold flex items-center gap-2">
-                            <i data-lucide="credit-card" className="w-4 h-4 text-primary"></i>
-                            Secure Checkout
-                        </h3>
-                        <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
-                            <i data-lucide="x" className="w-4 h-4"></i>
-                        </button>
-                    </div>
-
-                    <div className="bg-slate-50 p-3 rounded-lg text-xs space-y-2">
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Product</span>
-                            <span className="font-medium">Jira Sync {plan === 'individual' ? 'Pro' : 'Organization'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Total</span>
-                            <span className="font-bold text-primary">{price}</span>
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg border border-blue-100 italic">
-                            <i data-lucide="info" className="w-4 h-4 text-blue-600 mt-0.5 shrink-0"></i>
-                            <p className="text-[10px] text-blue-800 leading-tight">
-                                You will be securely redirected to Stripe's payment page to complete your purchase.
-                            </p>
-                        </div>
-
-                        <Button className="w-full" onClick={handlePay} disabled={loading}>
-                            {loading ? (
-                                <><span className="animate-spin mr-2">⏳</span> Processing...</>
-                            ) : (
-                                <><i data-lucide="lock" className="w-4 h-4 mr-2"></i> Pay {price}</>
-                            )}
-                        </Button>
-
-                        <Button className="w-full" variant="outline" onClick={onCancel} disabled={loading}>
-                            <i data-lucide="arrow-left" className="w-4 h-4 mr-2"></i>
-                            Back to Plans
-                        </Button>
-
-                        <p className="text-[10px] text-center text-muted-foreground flex items-center justify-center gap-1">
-                            <i data-lucide="shield-check" className="w-3 h-3"></i>
-                            Secure payments by Stripe
-                        </p>
-                    </div>
-                </div>
-            );
-        };
-
         // LICENSE PANEL COMPONENT
         const LicensePanel = ({ license, setLicense, setStatus, loadLicenseInfo }) => {
-            const [pricing, setPricing] = useState(null);
-            const [loading, setLoading] = useState(false);
-            const [purchaseType, setPurchaseType] = useState('individual');
-            const [domainInput, setDomainInput] = useState('');
-            const [seatsInput, setSeatsInput] = useState(10);
-            const [billingCycle, setBillingCycle] = useState('yearly');
-            const [showCheckout, setShowCheckout] = useState(false);
-            const [selectedPriceId, setSelectedPriceId] = useState(null);
-            const [selectedPrice, setSelectedPrice] = useState(null);
-
-            useEffect(() => {
-                loadPricing();
-                if (USER_EMAIL) {
-                    const emailDomain = USER_EMAIL.split('@')[1];
-                    setDomainInput(emailDomain || '');
-                }
-            }, []);
-
-            const loadPricing = () => {
-                google.script.run
-                    .withSuccessHandler(setPricing)
-                    .withFailureHandler(() => { })
-                    .getPricingInfo();
-            };
-
-            const handleUpgrade = () => {
-                const selectedPricing = pricing[purchaseType];
-                if (!selectedPricing) return;
-
-                const planData = billingCycle === 'yearly' ? selectedPricing.yearly : selectedPricing.monthly;
-
-                const priceId = planData?.priceId;
-
-                if (!priceId) {
-                    setStatus({ type: 'error', text: 'Pricing configuration missing.' });
-                    return;
-                }
-
-                // Domain/Enterprise validation
-                if ((purchaseType === 'domain' || purchaseType === 'enterprise') && (!domainInput || !domainInput.includes('.'))) {
-                    setStatus({ type: 'error', text: 'Please enter a valid company domain.' });
-                    return;
-                }
-
-                let finalPrice = planData.price;
-                if (purchaseType === 'domain') {
-                    const unitPrice = planData.value;
-                    const total = unitPrice * seatsInput;
-                    finalPrice = `$${total}/${billingCycle === 'yearly' ? 'year' : 'month'} (${seatsInput} seats)`;
-                }
-
-                if (window.posthog) posthog.capture('sheets.license.upgrade_clicked', { plan: purchaseType });
-
-                // Use the checkout panel
-                setSelectedPriceId(priceId);
-                setSelectedPrice(finalPrice);
-                setShowCheckout(true);
-            };
-
-            const handleCheckoutSuccess = () => {
-                setShowCheckout(false);
-                setStatus({ type: 'success', text: 'Payment successful! Updating license...' });
-                // In a real app, the webhook would update KV. 
-                // We'll mock a success by reloading license info after a delay.
-                setTimeout(() => loadLicenseInfo(true), 3000);
-            };
-
             const handleManageSubscription = () => {
                 setStatus({ type: 'info', text: 'Opening subscription portal...' });
                 google.script.run
@@ -558,31 +379,8 @@
                     .createManageSubscriptionSession();
             };
 
-            if (loading) {
-                return (
-                    <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full"></div>
-                    </div>
-                );
-            }
-
-            if (showCheckout) {
-                return (
-                    <CheckoutPanel
-                        email={license?.email}
-                        plan={purchaseType}
-                        priceId={selectedPriceId}
-                        price={selectedPrice}
-                        domain={domainInput}
-                        seats={seatsInput}
-                        onCancel={() => setShowCheckout(false)}
-                        onSuccess={handleCheckoutSuccess}
-                        setStatus={setStatus}
-                    />
-                );
-            }
-
-            const isPro = license?.allowed && license?.plan !== 'free';
+            const plan = license?.plan;
+            const isPaidPlan = plan === PLANS.PRO || plan === PLANS.ENTERPRISE;
 
             return (
                 <div className="space-y-4 animation-fade-in">
@@ -602,13 +400,13 @@
                     {/* Current License Status */}
                     <div className={cn(
                         "p-4 rounded-lg border-2",
-                        isPro ? "border-yellow-400 bg-yellow-50" : "border-gray-200 bg-gray-50"
+                        isPaidPlan ? "border-yellow-400 bg-yellow-50" : "border-gray-200 bg-gray-50"
                     )}>
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-xs font-medium text-muted-foreground uppercase">Current Plan</span>
                             <span className={cn(
                                 "px-2 py-1 rounded text-xs font-bold uppercase",
-                                isPro ? "bg-yellow-400 text-yellow-900" : "bg-gray-200 text-gray-600"
+                                isPaidPlan ? "bg-yellow-400 text-yellow-900" : "bg-gray-200 text-gray-600"
                             )}>
                                 {license?.plan || 'Free'}
                             </span>
@@ -656,7 +454,7 @@
                         </div>
 
                         {/* Features List */}
-                        {isPro && license?.features?.length > 0 && (
+                        {isPaidPlan && license?.features?.length > 0 && (
                             <div className="mt-3 pt-3 border-t">
                                 <p className="text-xs font-medium text-muted-foreground mb-2">Included Features:</p>
                                 <div className="flex flex-wrap gap-1">
@@ -673,7 +471,7 @@
 
                     {/* Pro Actions */}
                     {
-                        isPro ? (
+                        isPaidPlan ? (
                             <div className="space-y-2">
                                 <Button className="w-full" variant="outline" onClick={handleManageSubscription}>
                                     <i data-lucide="settings" className="w-4 h-4 mr-2"></i>
@@ -681,206 +479,17 @@
                                 </Button>
                             </div>
                         ) : (
-                            /* Upgrade Section */
-                            <div className="space-y-4">
-                                <div className="text-center">
-                                    <h3 className="font-bold text-lg">Upgrade to Pro</h3>
-                                    <p className="text-sm text-muted-foreground">Unlock all features</p>
+                            <div className="space-y-3">
+                                <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 text-center space-y-3">
+                                    <i data-lucide="external-link" className="w-8 h-8 mx-auto text-blue-500"></i>
+                                    <p className="text-sm font-medium">Purchase a license at</p>
+                                    <p className="text-sm font-bold text-blue-700">sheetsync.dev</p>
+                                    <p className="text-xs text-muted-foreground">Use your Google account email ({USER_EMAIL}) at checkout. Your license will activate automatically.</p>
                                 </div>
-
                                 <Button className="w-full" variant="outline" size="sm" onClick={() => loadLicenseInfo()}>
                                     <i data-lucide="refresh-cw" className="w-4 h-4 mr-2"></i>
-                                    Refresh Status
+                                    Refresh License Status
                                 </Button>
-
-                                {/* Purchase Type Toggle */}
-                                <div className="flex rounded-lg bg-muted p-1">
-                                    <button
-                                        onClick={() => setPurchaseType('individual')}
-                                        className={cn(
-                                            "flex-1 py-1.5 px-1 rounded-md text-[10px] font-bold transition-all truncate",
-                                            purchaseType === 'individual' ? "bg-background shadow" : "hover:bg-background/50"
-                                        )}
-                                    >
-                                        Personal
-                                    </button>
-                                    <button
-                                        onClick={() => setPurchaseType('enterprise')}
-                                        className={cn(
-                                            "flex-1 py-1.5 px-1 rounded-md text-[10px] font-bold transition-all truncate",
-                                            purchaseType === 'enterprise' ? "bg-background shadow font-bold" : "hover:bg-background/50"
-                                        )}
-                                    >
-                                        Enterprise
-                                    </button>
-                                </div>
-
-                                {/* Domain Input (for enterprise purchase) */}
-                                {purchaseType === 'enterprise' && (
-                                    <div className="space-y-3 p-3 bg-muted rounded-lg border border-indigo-100 italic">
-                                        <div className="space-y-1">
-                                            <Label>Organization Domain</Label>
-                                            <Input
-                                                placeholder="company.com"
-                                                value={domainInput}
-                                                onChange={(e) => setDomainInput(e.target.value)}
-                                            />
-                                            <p className="text-[10px] text-muted-foreground">
-                                                All users with @{domainInput || 'company.com'} emails will have full Pro access.
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Billing Cycle Toggle */}
-                                <div className="flex rounded-lg bg-muted p-1">
-                                    <button
-                                        onClick={() => setBillingCycle('monthly')}
-                                        className={cn(
-                                            "flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all",
-                                            billingCycle === 'monthly' ? "bg-background shadow" : "hover:bg-background/50"
-                                        )}
-                                    >
-                                        Monthly
-                                    </button>
-                                    <button
-                                        onClick={() => setBillingCycle('yearly')}
-                                        className={cn(
-                                            "flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all relative",
-                                            billingCycle === 'yearly' ? "bg-background shadow" : "hover:bg-background/50"
-                                        )}
-                                    >
-                                        Yearly
-                                        {pricing && pricing[purchaseType].monthly && (
-                                            <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-green-500 text-white text-[8px] rounded-full">
-                                                SAVE {Math.abs(Math.round(100 - (pricing[purchaseType].yearly.value / (pricing[purchaseType].monthly.value * 12) * 100)))}%
-                                            </span>
-                                        )}
-                                    </button>
-                                </div>
-
-                                {/* Pricing Display */}
-                                {pricing && (
-                                    <div className="text-center py-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
-                                        <div className="text-2xl font-bold text-primary">
-                                            {(() => {
-                                                const p = pricing[purchaseType];
-                                                const data = p[billingCycle];
-                                                return data?.price || '$0';
-                                            })()}
-                                        </div>
-                                        <p className="text-xs text-muted-foreground mt-1 text-indigo-800 font-medium">
-                                            {purchaseType === 'individual' ? 'Personal Subscription' :
-                                                `Unlimited Users for @${domainInput || 'organization'}`}
-                                        </p>
-                                    </div>
-                                )}
-                                {/* Features List */}
-                                {pricing && (
-                                    <div className="space-y-2">
-                                        <p className="text-xs font-medium text-muted-foreground">What's included:</p>
-                                        <ul className="space-y-1">
-                                            {(pricing[purchaseType]?.features)?.map((feature, i) => (
-                                                <li key={i} className="flex items-center text-sm">
-                                                    <i data-lucide="check" className="w-4 h-4 mr-2 text-green-500"></i>
-                                                    {feature}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
-
-
-                                <Button className="w-full" onClick={handleUpgrade}>
-                                    <i data-lucide="zap" className="w-4 h-4 mr-2"></i>
-                                    Upgrade Now
-                                </Button>
-
-                                {/* Testimonials */}
-                                <div className="pt-6 border-t space-y-4">
-                                    <h4 className="font-semibold text-sm">What Our Users Say</h4>
-
-                                    <div className="p-3 bg-card rounded-lg border shadow-sm space-y-2">
-                                        <div className="flex text-yellow-400 gap-0.5">
-                                            {[1, 2, 3, 4, 5].map(i => <i key={i} data-lucide="star" className="w-3 h-3 fill-current"></i>)}
-                                        </div>
-                                        <p className="text-xs italic text-muted-foreground">
-                                            "This add-on has completely transformed how we manage Jira issues in Excel. The bulk operations alone save us hours every week!"
-                                        </p>
-                                        <p className="text-[10px] text-muted-foreground font-medium">— Sarah M., Project Manager</p>
-                                    </div>
-
-                                    <div className="p-3 bg-card rounded-lg border shadow-sm space-y-2">
-                                        <div className="flex text-yellow-400 gap-0.5">
-                                            {[1, 2, 3, 4, 5].map(i => <i key={i} data-lucide="star" className="w-3 h-3 fill-current"></i>)}
-                                        </div>
-                                        <p className="text-xs italic text-muted-foreground">
-                                            "The auto-refresh feature keeps our team's data synchronized without any manual effort. Worth every penny!"
-                                        </p>
-                                        <p className="text-[10px] text-muted-foreground font-medium">— David K., Engineering Lead</p>
-                                    </div>
-                                    <div className="p-3 bg-card rounded-lg border shadow-sm space-y-2">
-                                        <div className="flex text-yellow-400 gap-0.5">
-                                            {[1, 2, 3, 4, 5].map(i => <i key={i} data-lucide="star" className="w-3 h-3 fill-current"></i>)}
-                                        </div>
-                                        <p className="text-xs italic text-muted-foreground">
-                                            "We switched to the Enterprise plan for our entire team. The domain-wide license makes it so easy to onboard new members."
-                                        </p>
-                                        <p className="text-[10px] text-muted-foreground font-medium">— Jennifer L., IT Director</p>
-                                    </div>
-                                </div>
-
-                                {/* FAQ Section */}
-                                <div className="pt-6 border-t space-y-4">
-                                    <h4 className="font-semibold text-sm">Frequently Asked Questions</h4>
-                                    <div className="space-y-2">
-                                        <AccordionItem title="What happens after my free trial ends?">
-                                            You'll automatically revert to the Free plan. You still get access to ALL features, but you'll be limited to managing up to 150 issues. Your data is safe, and you can upgrade anytime for unlimited scale.
-                                        </AccordionItem>
-                                        <AccordionItem title="Can I cancel my subscription?">
-                                            Yes! You can cancel anytime from your Stripe customer portal. No questions asked, and you'll retain access until the end of your billing period.
-                                        </AccordionItem>
-                                        <AccordionItem title="What payment methods do you accept?">
-                                            We accept all major credit cards (Visa, Mastercard, American Express) through our secure payment processor, Stripe.
-                                        </AccordionItem>
-                                        <AccordionItem title="How does the domain-wide license work?">
-                                            The Enterprise plan allows all users with your company email domain (e.g., @yourcompany.com) to access Pro features automatically.
-                                        </AccordionItem>
-                                        <AccordionItem title="Do you offer refunds?">
-                                            Yes! We offer a 14-day money-back guarantee. If you're not satisfied, contact us for a full refund.
-                                        </AccordionItem>
-                                        <AccordionItem title="Can I switch plans later?">
-                                            Absolutely. You can upgrade, downgrade, or switch between monthly and yearly billing at any time.
-                                        </AccordionItem>
-                                    </div>
-                                </div>
-
-                                {/* Trust Badges */}
-                                <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-100 space-y-4">
-                                    <div className="space-y-1">
-                                        <div className="flex items-center gap-2 text-green-800">
-                                            <i data-lucide="shield-check" className="w-4 h-4 text-green-600"></i>
-                                            <span className="text-xs font-semibold">Secure & Trusted</span>
-                                        </div>
-                                        <p className="text-[10px] text-green-700 ml-6">Payments securely processed by Stripe</p>
-                                    </div>
-
-                                    <div className="space-y-1">
-                                        <div className="flex items-center gap-2 text-green-800">
-                                            <i data-lucide="check-circle-2" className="w-4 h-4 text-green-600"></i>
-                                            <span className="text-xs font-semibold">14-Day Money-Back Guarantee</span>
-                                        </div>
-                                        <p className="text-[10px] text-green-700 ml-6">Not satisfied? Get a full refund, no questions asked</p>
-                                    </div>
-
-                                    <div className="space-y-1">
-                                        <div className="flex items-center gap-2 text-green-800">
-                                            <i data-lucide="x-circle" className="w-4 h-4 text-green-600"></i>
-                                            <span className="text-xs font-semibold">Cancel Anytime</span>
-                                        </div>
-                                        <p className="text-[10px] text-green-700 ml-6">No commitments, cancel with one click</p>
-                                    </div>
-                                </div>
                             </div>
                         )
                     }
@@ -1190,8 +799,8 @@
 
                     const data = await res.json();
 
-                    // Success detection: only show when upgrading from free, not on initial load
-                    const upgraded = license.plan === 'free' && (data.plan && data.plan !== 'free');
+                    // Success detection: only show when upgrading, not on initial load
+                    const upgraded = license.plan === PLANS.STARTER && data.plan && data.plan !== PLANS.STARTER;
 
                     setLicense(data);
 
@@ -1202,8 +811,7 @@
                     }
 
                     // Automatically enable/disable cloudflare based on license if needed
-                    const isProUser = data.allowed && data.plan !== 'free';
-                    if (!isProUser && config.useCloudflare) {
+                    if (data.plan === PLANS.STARTER && config.useCloudflare) {
                         setConfig(prev => ({ ...prev, useCloudflare: false }));
                     }
                 } catch (e) {
@@ -1548,8 +1156,7 @@
                 setIsRefreshing(true);
                 setStatus({ type: 'info', text: 'Fetching data...' });
 
-                const isPro = license?.allowed && license?.plan !== 'free';
-                const params = { ...cfg, triggerType: trigger, force: force, isPro: isPro };
+                const params = { ...cfg, triggerType: trigger, force: force, plan: license?.plan };
 
                 // Auto-save config when refreshing manually so current JQL is persisted
                 // Skip saving if we are targeting a specific sheet (one-off fetch)
@@ -1612,8 +1219,6 @@
 
                 setIsRefreshing(true);
                 setStatus({ type: 'info', text: 'Global Refresh: Updating all Jira sheets...' });
-                const isPro = license?.allowed && license?.plan !== 'free';
-
                 const startTime = Date.now();
                 google.script.run
                     .withSuccessHandler((res) => {
@@ -1638,20 +1243,19 @@
                         setIsRefreshing(false);
                         setStatus({ type: 'error', text: 'Global Refresh Failed: ' + err.message });
                     })
-                    .refreshAllJiraSheets({ ...config, triggerType: trigger, isPro: isPro });
+                    .refreshAllJiraSheets({ ...config, triggerType: trigger, plan: license?.plan });
             };
 
             const handleUpdate = () => {
                 setStatus({ type: 'info', text: 'Validating and processing...' });
-                const isPro = license?.allowed && license?.plan !== 'free';
-
+                const plan = license?.plan;
                 google.script.run
                     .withSuccessHandler((data) => {
                         let updates = data.updates || [];
                         let creates = data.creates || [];
                         let isLimited = false;
 
-                        if (!isPro && (updates.length + creates.length) > 150) {
+                        if (plan === PLANS.STARTER && (updates.length + creates.length) > 150) {
                             if (updates.length > 150) {
                                 updates = updates.slice(0, 150);
                                 creates = [];
@@ -1707,7 +1311,7 @@
                                         }
                                     })
                                     .withFailureHandler(err => setStatus({ type: 'error', text: 'Batch failed: ' + err.message }))
-                                    .updateJiraIssuesDirect({ ...config, isPro }, chunk, { sheetName: data.sheetName });
+                                    .updateJiraIssuesDirect({ ...config, plan }, chunk, { sheetName: data.sheetName });
                             };
 
                             setTimeout(() => {
@@ -1742,14 +1346,14 @@
                     setStatus({ type: 'error', text: 'Please select project name' });
                     return;
                 }
-                const isPro = license?.allowed && license?.plan !== 'free';
+                const plan = license?.plan;
                 setStatus({ type: 'info', text: 'Checking rows to create...' });
                 google.script.run
                     .withSuccessHandler((data) => {
                         let creates = data.creates || [];
                         let isLimited = false;
 
-                        if (!isPro && creates.length > 150) {
+                        if (plan === PLANS.STARTER && creates.length > 150) {
                             creates = creates.slice(0, 150);
                             isLimited = true;
                         }
@@ -1779,7 +1383,7 @@
                                 if (window.posthog) posthog.capture('sheets.bulkcreate.created', { issue_count: res.count });
                             })
                             .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
-                            .createJiraIssues({ ...config, isPro }, creates);
+                            .createJiraIssues({ ...config, plan }, creates);
                     })
                     .withFailureHandler(err => setStatus({ type: 'error', text: err.message }))
                     .getSelectedRowsData();
@@ -2113,12 +1717,12 @@
 
                                 <label className={cn(
                                     "flex items-center gap-2 text-sm transition-colors",
-                                    (license?.allowed && license?.plan !== 'free') ? "cursor-pointer hover:text-primary" : "opacity-50 grayscale cursor-not-allowed"
+                                    license?.plan !== PLANS.STARTER ? "cursor-pointer hover:text-primary" : "opacity-50 grayscale cursor-not-allowed"
                                 )}>
                                     <input
                                         type="checkbox"
-                                        checked={(license?.allowed && license?.plan !== 'free') && (config.useCloudflare || false)}
-                                        disabled={!(license?.allowed && license?.plan !== 'free')}
+                                        checked={license?.plan !== PLANS.STARTER && (config.useCloudflare || false)}
+                                        disabled={license?.plan === PLANS.STARTER}
                                         onChange={e => updateConfig('useCloudflare', e.target.checked)}
                                         className="rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-50"
                                     />

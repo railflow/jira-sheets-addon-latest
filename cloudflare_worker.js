@@ -1,15 +1,17 @@
 /**
  * Cloudflare Worker for Jira Proxy & License Management
+ * Storage: Cloudflare D1 (SQLite) via env.DB binding
  */
 
 const ALLOWED_DOMAIN_SUFFIX = ".atlassian.net";
+const CORS = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" };
 
 export default {
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const path = url.pathname;
 
-        // 1. Handle CORS preflight
+        // CORS preflight
         if (request.method === "OPTIONS") {
             return new Response(null, {
                 headers: {
@@ -20,162 +22,146 @@ export default {
             });
         }
 
-        // 2. Handle License API
-        if (path === "/api/license/check") {
-            return await handleLicenseCheck(request, env);
-        }
+        if (path === "/api/license/check")        return handleLicenseCheck(request, env);
+        if (path === "/api/stripe/create-session") return handleStripeSession(request, env);
+        if (path === "/api/stripe/webhook")        return handleStripeWebhook(request, env);
+        if (path === "/api/stripe/portal")         return handleStripePortal(request, env);
+        if (path === "/api/admin/sales-csv")       return handleSalesExport(request, env);
 
-        // 3. Handle Stripe Checkout
-        if (path === "/api/stripe/create-session") {
-            return await handleStripeSession(request, env);
-        }
-
-        // 4. Handle Stripe Webhook
-        if (path === "/api/stripe/webhook") {
-            return await handleStripeWebhook(request, env);
-        }
-
-        // 4.5 Handle Stripe Customer Portal
-        if (path === "/api/stripe/portal") {
-            return await handleStripePortal(request, env);
-        }
-
-        // 5. Debug Endpoint
         if (path === "/api/debug") {
             return new Response(JSON.stringify({
-                hasKV: !!env.LICENSES,
+                hasDB: !!env.DB,
                 time: new Date().toISOString(),
-                kvId: env.LICENSES ? "Present" : "Missing"
-            }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+            }), { headers: CORS });
         }
 
-        // 6. Build Sales CSV
-        if (path === "/api/admin/sales-csv") {
-            return await handleSalesExport(request, env);
-        }
+        if (url.searchParams.has("target")) return handleProxy(request, env);
 
-        // 6. Handle Jira Proxy
-        if (url.searchParams.has("target")) {
-            return await handleProxy(request, env);
-        }
-
-        // 7. Handle Static Assets / Landing Page
-        return await handleStaticAssets(request, env);
+        return handleStaticAssets(request, env);
     },
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function okJson(data)       { return new Response(JSON.stringify(data), { headers: CORS }); }
+function errJson(msg, code) { return new Response(JSON.stringify({ error: msg }), { status: code, headers: CORS }); }
+
 /**
- * Exports sales data from KV as a CSV
+ * Fire-and-forget login event upsert — does not block the license response.
  */
-async function handleSalesExport(request, env) {
-    const secret = new URL(request.url).searchParams.get("secret");
-    if (secret !== env.PROXY_SECRET) {
-        return new Response("Unauthorized", { status: 401 });
-    }
-
-    const header = "Date,Email,Plan,Domain,Stripe_Customer,Subscription,Amount_USD\n";
-    let rows = [header];
-
-    // List all keys with 'sale:' prefix
-    const list = await env.LICENSES.list({ prefix: "sale:" });
-    for (const key of list.keys) {
-        const val = await env.LICENSES.get(key.name);
-        if (val) rows.push(val + "\n");
-    }
-
-    return new Response(rows.join(""), {
-        headers: {
-            "Content-Type": "text/csv",
-            "Content-Disposition": "attachment; filename=jira-sync-sales.csv",
-            "Access-Control-Allow-Origin": "*"
-        }
-    });
+function logLogin(env, email, plan) {
+    if (!env.DB) return;
+    const now = new Date().toISOString();
+    env.DB.prepare(`
+        INSERT INTO login_events (email, first_seen, last_seen, visit_count, plan)
+        VALUES (?, ?, ?, 1, ?)
+        ON CONFLICT(email) DO UPDATE SET
+            last_seen   = excluded.last_seen,
+            visit_count = visit_count + 1,
+            plan        = excluded.plan
+    `).bind(email, now, now, plan || "free").run().catch(() => {});
 }
 
-/**
- * Handles License verification using Cloudflare KV
- * Checks both individual email and domain-wide licenses
- */
+// ─── License Check ────────────────────────────────────────────────────────────
+
 async function handleLicenseCheck(request, env) {
     try {
-        const { email } = await request.json();
-        console.log(`[License Check] Checking email: ${email}`);
-        if (!email) return new Response("Missing email", { status: 400 });
+        const body = await request.json();
+        const email = body?.email;
+        if (!email) return errJson("Missing email", 400);
 
         const emailLower = email.toLowerCase();
         const domain = emailLower.split('@')[1];
 
-        if (!env.LICENSES) {
-            // Development/Fallback logic
-            return new Response(JSON.stringify({
-                allowed: true,
-                plan: "pro (KV not bound)",
-                status: "active",
-                licenseType: "individual",
-                features: ["unlimited_syncs"]
-            }), {
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        if (!env.DB) {
+            return okJson({ allowed: true, plan: "pro (DB not bound)", status: "active", licenseType: "individual", features: ["unlimited_syncs"] });
+        }
+
+        // 1. Individual license
+        const user = await env.DB
+            .prepare("SELECT * FROM user_licenses WHERE email = ?")
+            .bind(emailLower).first();
+
+        if (user) {
+            logLogin(env, emailLower, user.plan);
+            return okJson({
+                allowed:      !!user.allowed,
+                plan:         user.plan,
+                status:       user.status,
+                licenseType:  "individual",
+                customer:     user.customer_id,
+                subscription: user.subscription_id,
+                priceId:      user.price_id,
+                amount:       user.amount,
+                renewsAt:     user.renews_at,
+                domain:       user.domain,
+                lastUpdated:  user.last_updated,
             });
         }
 
-        // 1. Check for individual license
-        const userData = await env.LICENSES.get(`user:${emailLower}`);
-        if (userData) {
-            return new Response(userData, {
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-            });
-        }
-
-        // 2. Check for domain-wide license
+        // 2. Domain license
         if (domain) {
-            const domainData = await env.LICENSES.get(`domain:${domain}`);
-            if (domainData) {
-                // If domain license exists, the user is allowed!
-                const parsedDomain = JSON.parse(domainData);
-                return new Response(JSON.stringify({
-                    ...parsedDomain,
-                    allowed: parsedDomain.status === 'active' || parsedDomain.status === 'trialing',
-                    licenseType: "domain",
-                    domain: domain
-                }), {
-                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            const dom = await env.DB
+                .prepare("SELECT * FROM domain_licenses WHERE domain = ?")
+                .bind(domain).first();
+
+            if (dom) {
+                const allowed = dom.status === "active" || dom.status === "trialing";
+                logLogin(env, emailLower, dom.plan);
+                return okJson({
+                    allowed,
+                    plan:         dom.plan,
+                    status:       dom.status,
+                    licenseType:  "domain",
+                    domain,
+                    customer:     dom.customer_id,
+                    subscription: dom.subscription_id,
+                    priceId:      dom.price_id,
+                    amount:       dom.amount,
+                    renewsAt:     dom.renews_at,
+                    seats:        dom.seats,
                 });
             }
         }
 
-        // 3. Fallback to free plan
-        return new Response(JSON.stringify({
-            allowed: false,
-            plan: "free",
-            status: "none",
-            email: emailLower,
-            message: "No active license found for this user or domain."
-        }), {
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        });
+        // 3. Free / no license
+        logLogin(env, emailLower, "free");
+        return okJson({ allowed: false, plan: "free", status: "none", email: emailLower, message: "No active license found." });
+
     } catch (e) {
         return new Response("License API Error: " + e.message, { status: 500 });
     }
 }
 
-/**
- * Handles Stripe Session Creation
- */
+// ─── Sales Export ─────────────────────────────────────────────────────────────
+
+async function handleSalesExport(request, env) {
+    const secret = new URL(request.url).searchParams.get("secret");
+    if (secret !== env.PROXY_SECRET) return new Response("Unauthorized", { status: 401 });
+
+    const { results } = await env.DB.prepare("SELECT * FROM sales ORDER BY created_at DESC").all();
+    const header = "Date,Email,Plan,Domain,Stripe_Customer,Subscription,Amount_USD\n";
+    const rows = (results || []).map(r =>
+        [r.created_at, r.email, r.plan, r.domain || "Personal", r.customer_id, r.subscription_id, (r.amount || 0).toFixed(2)].join(",")
+    );
+
+    return new Response(header + rows.join("\n"), {
+        headers: {
+            "Content-Type": "text/csv",
+            "Content-Disposition": "attachment; filename=jira-sync-sales.csv",
+            "Access-Control-Allow-Origin": "*",
+        },
+    });
+}
+
+// ─── Stripe Session ───────────────────────────────────────────────────────────
+
 async function handleStripeSession(request, env) {
     try {
-        const body = await request.json();
-        const { email, plan, priceId, domain } = body;
-
-        // Real Stripe API implementation using Fetch
+        const { email, plan, priceId, domain } = await request.json();
         const stripeSecret = env.STRIPE_SECRET_KEY;
-        if (!stripeSecret) {
-            return new Response(JSON.stringify({ error: "Stripe Secret Key not configured in Worker." }), {
-                status: 500,
-                headers: { "Access-Control-Allow-Origin": "*" }
-            });
-        }
+        if (!stripeSecret) return errJson("Stripe Secret Key not configured.", 500);
 
-        // Create a Stripe Checkout Session
         const params = new URLSearchParams();
         params.append("customer_email", email);
         params.append("payment_method_types[]", "card");
@@ -183,223 +169,237 @@ async function handleStripeSession(request, env) {
         params.append("line_items[0][price]", priceId || "price_1P2b3c4d5e6f");
         params.append("line_items[0][quantity]", "1");
 
-        // Success redirect back to the worker's own landing page
         const baseUrl = new URL(request.url).origin;
         params.append("success_url", `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`);
         params.append("cancel_url", `${baseUrl}/cancel`);
-
         params.append("metadata[email]", email);
         params.append("metadata[plan]", plan || "pro");
-        if (domain) {
-            params.append("metadata[domain]", domain);
-        }
+        if (domain) params.append("metadata[domain]", domain);
         params.append("subscription_data[metadata][email]", email);
         params.append("subscription_data[metadata][plan]", plan || "pro");
-        if (domain) {
-            params.append("subscription_data[metadata][domain]", domain);
-        }
+        if (domain) params.append("subscription_data[metadata][domain]", domain);
 
-        const stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+        const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${stripeSecret}`,
-                "Content-Type": "application/x-www-form-urlencoded"
-            },
-            body: params.toString()
+            headers: { "Authorization": `Bearer ${stripeSecret}`, "Content-Type": "application/x-www-form-urlencoded" },
+            body: params.toString(),
         });
 
-        const session = await stripeResponse.json();
+        const session = await res.json();
+        if (!res.ok) throw new Error(session.error?.message || "Stripe API Error");
 
-        if (!stripeResponse.ok) {
-            throw new Error(session.error ? session.error.message : "Stripe API Error");
-        }
-
-        return new Response(JSON.stringify({
-            message: "Stripe session created.",
-            url: session.url,
-            sessionId: session.id,
-            publishableKey: env.STRIPE_PUBLISHABLE_KEY || "pk_0JkeFQXipCRQx1VBmDgCPlHwPCsvC",
-            metadata: { email, plan }
-        }), {
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Content-Type"
-            }
-        });
+        return okJson({ message: "Session created.", url: session.url, sessionId: session.id, publishableKey: env.STRIPE_PUBLISHABLE_KEY, metadata: { email, plan } });
     } catch (e) {
-        return new Response(JSON.stringify({ error: e.message }), {
-            status: 500,
-            headers: { "Access-Control-Allow-Origin": "*" }
-        });
+        return errJson(e.message, 500);
     }
 }
 
-/**
- * Handles Stripe Webhooks for Provisioning
- */
-async function handleStripeWebhook(request, env) {
-    console.log(`[Stripe Webhook] HIT - Method: ${request.method} - URL: ${request.url}`);
-    try {
-        const signature = request.headers.get("stripe-signature");
-        console.log(`[Stripe Webhook] Signature present: ${!!signature}`);
-        const bodyText = await request.text();
-        const stripeSecret = env.STRIPE_SECRET_KEY;
-        const webhookSecret = env.STRIPE_WEBHOOK_SECRET;
+// ─── Stripe Webhook ───────────────────────────────────────────────────────────
 
-        // Note: Full signature verification requires a library or manual crypto
-        // For now, we rely on the webhookSecret being present to trust the request
-        const isMock = request.headers.get("X-Mock-Request") === "true";
-        if (webhookSecret && !signature && !isMock) {
-            console.log("[Stripe Webhook] Rejected: Missing signature and not a mock.");
-            return new Response("Missing signature", {
-                status: 400,
-                headers: { "Access-Control-Allow-Origin": "*" }
-            });
+async function handleStripeWebhook(request, env) {
+    console.log(`[Webhook] HIT ${request.method} ${request.url}`);
+    try {
+        const signature   = request.headers.get("stripe-signature");
+        const bodyText    = await request.text();
+        const isMock      = request.headers.get("X-Mock-Request") === "true";
+
+        if (env.STRIPE_WEBHOOK_SECRET && !signature && !isMock) {
+            return new Response("Missing signature", { status: 400, headers: CORS });
         }
 
         const event = JSON.parse(bodyText);
-        console.log(`[Stripe Webhook] Received event: ${event.type}`);
-        console.log(`[Stripe Webhook] Body Preview: ${bodyText.substring(0, 200)}...`);
+        console.log(`[Webhook] Event: ${event.type}`);
+        const stripeSecret = env.STRIPE_SECRET_KEY;
 
+        // ── checkout.session.completed ──────────────────────────────────────
         if (event.type === "checkout.session.completed") {
             const session = event.data.object;
-            const email = session.metadata.email || session.customer_details.email;
-            const plan = session.metadata.plan || "pro";
-            const domain = session.metadata.domain;
+            const email   = session.metadata?.email || session.customer_details?.email;
+            const plan    = session.metadata?.plan || "pro";
+            const domain  = session.metadata?.domain;
+            if (!email) { console.error("[Webhook] No email in session"); return okJson({ received: true }); }
 
-            if (email && env.LICENSES) {
-                const licenseData = {
-                    allowed: true,
-                    plan: plan,
-                    status: "active",
-                    domain: domain,
-                    expires: null,
-                    customer: session.customer,
-                    subscription: session.subscription,
-                    lastUpdated: new Date().toISOString()
-                };
+            // Fetch subscription for renewal date + price
+            let renewsAt = null, priceId = null, amount = null;
+            if (session.subscription && stripeSecret) {
+                try {
+                    const subRes = await fetch(`https://api.stripe.com/v1/subscriptions/${session.subscription}`, {
+                        headers: { "Authorization": `Bearer ${stripeSecret}` },
+                    });
+                    if (subRes.ok) {
+                        const sub = await subRes.json();
+                        renewsAt = new Date(sub.current_period_end * 1000).toISOString();
+                        priceId  = sub.items?.data?.[0]?.price?.id || null;
+                        amount   = sub.items?.data?.[0]?.price?.unit_amount
+                            ? sub.items.data[0].price.unit_amount / 100
+                            : (session.amount_total / 100);
+                    }
+                } catch (e) { console.error("[Webhook] Sub fetch failed:", e.message); }
+            }
 
-                // 1. Activate individual license
-                await env.LICENSES.put(`user:${email.toLowerCase()}`, JSON.stringify(licenseData));
+            const now = new Date().toISOString();
 
-                // 2. Activate domain license if applicable
-                if (domain) {
-                    await env.LICENSES.put(`domain:${domain.toLowerCase()}`, JSON.stringify({
-                        ...licenseData,
-                        email: email // Keep track of who bought it
-                    }));
-                    console.log(`[Provisioning] Domain license activated for ${domain}`);
-                }
+            // Upsert individual license
+            await env.DB.prepare(`
+                INSERT INTO user_licenses (email, domain, plan, status, allowed, customer_id, subscription_id, price_id, amount, renews_at, last_updated)
+                VALUES (?, ?, ?, 'active', 1, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(email) DO UPDATE SET
+                    domain = excluded.domain, plan = excluded.plan, status = 'active', allowed = 1,
+                    customer_id = excluded.customer_id, subscription_id = excluded.subscription_id,
+                    price_id = excluded.price_id, amount = excluded.amount,
+                    renews_at = excluded.renews_at, last_updated = excluded.last_updated
+            `).bind(email.toLowerCase(), domain || null, plan, session.customer, session.subscription, priceId, amount, renewsAt, now).run();
 
-                console.log(`[Provisioning] License activated for ${email}`);
+            // Upsert domain license if applicable
+            if (domain) {
+                await env.DB.prepare(`
+                    INSERT INTO domain_licenses (domain, email, plan, status, allowed, customer_id, subscription_id, price_id, amount, renews_at, last_updated)
+                    VALUES (?, ?, ?, 'active', 1, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(domain) DO UPDATE SET
+                        email = excluded.email, plan = excluded.plan, status = 'active', allowed = 1,
+                        customer_id = excluded.customer_id, subscription_id = excluded.subscription_id,
+                        price_id = excluded.price_id, amount = excluded.amount,
+                        renews_at = excluded.renews_at, last_updated = excluded.last_updated
+                `).bind(domain.toLowerCase(), email, plan, session.customer, session.subscription, priceId, amount, renewsAt, now).run();
+                console.log(`[Provisioning] Domain license activated: ${domain}`);
+            }
 
-                // Record Sale for CSV Export
-                const saleRecord = [
-                    new Date().toISOString(),
-                    email,
-                    plan,
-                    domain || "Personal",
-                    session.customer,
-                    session.subscription,
-                    (session.amount_total / 100).toFixed(2)
-                ].join(",");
+            // Record sale
+            await env.DB.prepare(`
+                INSERT INTO sales (created_at, email, plan, domain, customer_id, subscription_id, amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `).bind(now, email, plan, domain || null, session.customer, session.subscription, amount || (session.amount_total / 100)).run();
 
-                // Store with a unique key for easy listing
-                const saleKey = `sale:${Date.now()}:${email}`;
-                await env.LICENSES.put(saleKey, saleRecord);
+            console.log(`[Provisioning] License activated: ${email}`);
+        }
+
+        // ── customer.subscription.updated ───────────────────────────────────
+        if (event.type === "customer.subscription.updated") {
+            const sub   = event.data.object;
+            const email = sub.metadata?.email;
+            if (email && env.DB) {
+                const renewsAt = new Date(sub.current_period_end * 1000).toISOString();
+                const priceId  = sub.items?.data?.[0]?.price?.id || null;
+                const active   = sub.status === "active" || sub.status === "trialing" ? 1 : 0;
+                await env.DB.prepare(`
+                    UPDATE user_licenses
+                    SET status = ?, allowed = ?, renews_at = ?, price_id = COALESCE(?, price_id), last_updated = ?
+                    WHERE email = ?
+                `).bind(sub.status, active, renewsAt, priceId, new Date().toISOString(), email.toLowerCase()).run();
+                console.log(`[Webhook] Subscription updated for ${email}: ${sub.status}`);
             }
         }
 
+        // ── customer.subscription.deleted ───────────────────────────────────
         if (event.type === "customer.subscription.deleted") {
-            const subscription = event.data.object;
-            const email = subscription.metadata.email;
-
-            if (email && env.LICENSES) {
-                // We could delete or just mark as inactive
-                const existing = await env.LICENSES.get(`user:${email.toLowerCase()}`);
-                if (existing) {
-                    const data = JSON.parse(existing);
-                    data.allowed = false;
-                    data.status = "canceled";
-                    await env.LICENSES.put(`user:${email.toLowerCase()}`, JSON.stringify(data));
-                    console.log(`[De-provisioning] License deactivated for ${email}`);
-                }
+            const sub   = event.data.object;
+            const email = sub.metadata?.email;
+            if (email && env.DB) {
+                await env.DB.prepare(`
+                    UPDATE user_licenses SET allowed = 0, status = 'canceled', last_updated = ? WHERE email = ?
+                `).bind(new Date().toISOString(), email.toLowerCase()).run();
+                console.log(`[De-provisioning] License canceled: ${email}`);
             }
         }
 
-        return new Response(JSON.stringify({ received: true }), {
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            }
-        });
+        return okJson({ received: true });
     } catch (e) {
-        console.error(`[Stripe Webhook Error] ${e.message}`);
-        return new Response("Webhook Error: " + e.message, {
-            status: 500,
-            headers: { "Access-Control-Allow-Origin": "*" }
-        });
+        console.error(`[Webhook Error] ${e.message}`);
+        return new Response("Webhook Error: " + e.message, { status: 500, headers: CORS });
     }
 }
 
-/**
- * Handles Jira API Proxying
- */
+// ─── Stripe Portal ────────────────────────────────────────────────────────────
+
+async function handleStripePortal(request, env) {
+    try {
+        const { email, returnUrl } = await request.json();
+        if (!email) return errJson("Missing email", 400);
+        if (!env.DB)  return errJson("DB not configured", 500);
+
+        const user = await env.DB
+            .prepare("SELECT customer_id FROM user_licenses WHERE email = ?")
+            .bind(email.toLowerCase()).first();
+
+        if (!user) return errJson("No active subscription found. Please subscribe first.", 404);
+
+        const customerId = user.customer_id;
+        if (!customerId || customerId === "cus_mock") {
+            return errJson("You are on a trial or mock license. Subscribe to a Pro plan to manage via Stripe.", 400);
+        }
+
+        const stripeSecret = env.STRIPE_SECRET_KEY;
+        if (!stripeSecret) return errJson("Stripe connection error.", 500);
+
+        const params = new URLSearchParams();
+        params.append("customer", customerId);
+        if (returnUrl) params.append("return_url", returnUrl);
+
+        const res = await fetch("https://api.stripe.com/v1/billing_portal/sessions", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${stripeSecret}`, "Content-Type": "application/x-www-form-urlencoded" },
+            body: params.toString(),
+        });
+
+        const session = await res.json();
+        if (!res.ok) throw new Error(session.error?.message || "Stripe Portal API Error");
+
+        return okJson({ url: session.url });
+    } catch (e) {
+        console.error(`[Portal Error] ${e.message}`);
+        return errJson(e.message, 500);
+    }
+}
+
+// ─── Jira Proxy ───────────────────────────────────────────────────────────────
+
 async function handleProxy(request, env) {
     const proxySecret = env.PROXY_SECRET || "your-shared-secret-here";
     const url = new URL(request.url);
     const targetUrl = url.searchParams.get("target");
 
-    const incomingSecret = request.headers.get("X-Proxy-Secret");
-    if (incomingSecret !== proxySecret) {
+    if (request.headers.get("X-Proxy-Secret") !== proxySecret) {
         return new Response("Unauthorized.", { status: 401 });
     }
 
     try {
-        const target = new URL(targetUrl);
+        const target   = new URL(targetUrl);
         const hostname = target.hostname;
 
         if (!hostname.endsWith(ALLOWED_DOMAIN_SUFFIX)) {
             return new Response("Forbidden. Target domain not allowed.", { status: 403 });
         }
 
-        // --- Circuit Breaker: Daily Limit Per Domain ---
-        if (env.LICENSES) {
-            const today = new Date().toISOString().split('T')[0];
-            const statsKey = `domain_stats:${hostname}:${today}`;
+        // Circuit breaker — daily limit per Jira domain
+        if (env.DB) {
+            const today = new Date().toISOString().split("T")[0];
 
-            // Get current count
-            let currentCalls = parseInt(await env.LICENSES.get(statsKey) || "0");
+            const row = await env.DB
+                .prepare("SELECT call_count FROM domain_stats WHERE hostname = ? AND date = ?")
+                .bind(hostname, today).first();
+
+            const currentCalls = row?.call_count || 0;
 
             if (currentCalls >= 100000) {
                 console.error(`[Circuit Breaker] Limit hit for ${hostname}: ${currentCalls} calls today.`);
-                return new Response(JSON.stringify({
-                    error: "Daily API limit reached for this domain.",
-                    limit: 100000,
-                    domain: hostname
-                }), {
-                    status: 429,
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Access-Control-Allow-Origin": "*"
-                    }
+                return new Response(JSON.stringify({ error: "Daily API limit reached.", limit: 100000, domain: hostname }), {
+                    status: 429, headers: CORS,
                 });
             }
 
-            // Increment count
-            await env.LICENSES.put(statsKey, (currentCalls + 1).toString(), { expirationTtl: 172800 }); // 48h expiry
+            await env.DB.prepare(`
+                INSERT INTO domain_stats (hostname, date, call_count) VALUES (?, ?, 1)
+                ON CONFLICT(hostname, date) DO UPDATE SET call_count = call_count + 1
+            `).bind(hostname, today).run();
         }
-        // ----------------------------------------------
 
-        const proxyRequest = new Request(targetUrl, {
+        const response = await fetch(new Request(targetUrl, {
             method: request.method,
             headers: request.headers,
             body: request.body,
             redirect: "follow",
-        });
+        }));
 
-        const response = await fetch(proxyRequest);
         const responseHeaders = new Headers(response.headers);
         responseHeaders.set("Access-Control-Allow-Origin", "*");
 
@@ -409,175 +409,48 @@ async function handleProxy(request, env) {
             headers: responseHeaders,
         });
     } catch (e) {
-        return new Response("Proxy Error: " + e.message, {
-            status: 500,
-            headers: { "Access-Control-Allow-Origin": "*" }
-        });
+        return new Response("Proxy Error: " + e.message, { status: 500, headers: CORS });
     }
 }
 
-/**
- * Serves Static Assets from KV or returns instructions
- */
-async function handleStaticAssets(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname;
+// ─── Static Assets ────────────────────────────────────────────────────────────
 
-    // Handle Success/Cancel Landing Pages
+async function handleStaticAssets(request, env) {
+    const path = new URL(request.url).pathname;
+
     if (path === "/success") {
-        return new Response(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Success - Jira Sync Pro</title>
-                <style>
-                    body { font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f8fafc; color: #1e293b; }
-                    .card { background: white; padding: 2.5rem; border-radius: 1rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
-                    .icon { font-size: 3rem; color: #10b981; margin-bottom: 1rem; }
-                    h1 { margin: 0; color: #0f172a; }
-                    p { color: #64748b; line-height: 1.5; margin: 1rem 0; }
-                    .btn { display: inline-block; background: #2563eb; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none; font-weight: 600; margin-top: 1rem; }
-                </style>
-            </head>
-            <body>
-                <div class="card">
-                    <div class="icon">✅</div>
-                    <h1>Upgrade Successful!</h1>
-                    <p>Your Pro license is now active. You can close this tab and return to your Google Sheet.</p>
-                    <a href="javascript:window.close()" class="btn">Close Tab</a>
-                </div>
-            </body>
-            </html>
-        `, { headers: { "Content-Type": "text/html" } });
+        return new Response(`<!DOCTYPE html><html><head><title>Success - Jira Sync Pro</title>
+            <style>body{font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f8fafc;color:#1e293b}
+            .card{background:white;padding:2.5rem;border-radius:1rem;box-shadow:0 10px 25px -5px rgba(0,0,0,.1);text-align:center;max-width:400px}
+            .icon{font-size:3rem;color:#10b981;margin-bottom:1rem}h1{margin:0;color:#0f172a}p{color:#64748b;line-height:1.5;margin:1rem 0}
+            .btn{display:inline-block;background:#2563eb;color:white;padding:.75rem 1.5rem;border-radius:.5rem;text-decoration:none;font-weight:600;margin-top:1rem}</style>
+            </head><body><div class="card"><div class="icon">✅</div><h1>Upgrade Successful!</h1>
+            <p>Your license is now active. Close this tab and return to your Google Sheet.</p>
+            <a href="javascript:window.close()" class="btn">Close Tab</a></div></body></html>`,
+            { headers: { "Content-Type": "text/html" } });
     }
 
     if (path === "/cancel") {
-        return new Response(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Canceled - Jira Sync Pro</title>
-                <style>
-                    body { font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f8fafc; color: #1e293b; }
-                    .card { background: white; padding: 2.5rem; border-radius: 1rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
-                    .icon { font-size: 3rem; color: #64748b; margin-bottom: 1rem; }
-                    h1 { margin: 0; color: #0f172a; }
-                    p { color: #64748b; line-height: 1.5; margin: 1rem 0; }
-                    .btn { display: inline-block; background: #e2e8f0; color: #1e293b; padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none; font-weight: 600; margin-top: 1rem; }
-                </style>
-            </head>
-            <body>
-                <div class="card">
-                    <div class="icon">🛒</div>
-                    <h1>Payment Canceled</h1>
-                    <p>No charges were made. You can close this tab and return to the add-on to try again.</p>
-                    <a href="javascript:window.close()" class="btn">Close Tab</a>
-                </div>
-            </body>
-            </html>
-        `, { headers: { "Content-Type": "text/html" } });
+        return new Response(`<!DOCTYPE html><html><head><title>Canceled - Jira Sync Pro</title>
+            <style>body{font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f8fafc;color:#1e293b}
+            .card{background:white;padding:2.5rem;border-radius:1rem;box-shadow:0 10px 25px -5px rgba(0,0,0,.1);text-align:center;max-width:400px}
+            .icon{font-size:3rem;color:#64748b;margin-bottom:1rem}h1{margin:0;color:#0f172a}p{color:#64748b;line-height:1.5;margin:1rem 0}
+            .btn{display:inline-block;background:#e2e8f0;color:#1e293b;padding:.75rem 1.5rem;border-radius:.5rem;text-decoration:none;font-weight:600;margin-top:1rem}</style>
+            </head><body><div class="card"><div class="icon">🛒</div><h1>Payment Canceled</h1>
+            <p>No charges were made. Return to the add-on to try again.</p>
+            <a href="javascript:window.close()" class="btn">Close Tab</a></div></body></html>`,
+            { headers: { "Content-Type": "text/html" } });
     }
 
     if (!env.ASSETS) {
-        return new Response(`
-            <h1>Jira Sync Worker Backend</h1>
-            <p>API endpoints available at: /api/license/check, /api/stripe/create-session</p>
-        `, { headers: { "Content-Type": "text/html" } });
+        return new Response(`<h1>Jira Sync Worker</h1><p>API: /api/license/check, /api/stripe/create-session</p>`, { headers: { "Content-Type": "text/html" } });
     }
 
-    const key = path === "/" ? "index.html" : path.slice(1);
+    const key   = path === "/" ? "index.html" : path.slice(1);
     const asset = await env.ASSETS.get(key, { type: "stream" });
+    if (!asset) return new Response("Asset not found.", { status: 404 });
 
-    if (asset) {
-        let contentType = "text/plain";
-        if (key.endsWith(".html")) contentType = "text/html";
-        else if (key.endsWith(".css")) contentType = "text/css";
-        else if (key.endsWith(".js")) contentType = "text/javascript";
-        else if (key.endsWith(".png")) contentType = "image/png";
-        else if (key.endsWith(".jpg") || key.endsWith(".jpeg")) contentType = "image/jpeg";
-
-        return new Response(asset, { headers: { "Content-Type": contentType } });
-    }
-
-    return new Response("Asset not found.", { status: 404 });
-}
-
-/**
- * Handles Stripe Customer Portal Session Creation
- */
-async function handleStripePortal(request, env) {
-    try {
-        const body = await request.json();
-        const { email, returnUrl } = body;
-
-        if (!email) return new Response("Missing email", { status: 400 });
-        if (!env.LICENSES) return new Response("KV not configured", { status: 500 });
-
-        // 1. Find Customer ID from KV
-        const userDataRaw = await env.LICENSES.get(`user:${email.toLowerCase()}`);
-        if (!userDataRaw) {
-            return new Response(JSON.stringify({ error: "No active subscription found. Please subscribe first." }), {
-                status: 404,
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-            });
-        }
-
-        const userData = JSON.parse(userDataRaw);
-        const customerId = userData.customer;
-
-        if (!customerId || customerId === 'cus_mock') {
-            return new Response(JSON.stringify({
-                error: "You are currently on a trial or mock license. Please subscribe to a Pro plan to manage your subscription via Stripe."
-            }), {
-                status: 400,
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-            });
-        }
-
-        // 2. Create Stripe Portal Session
-        const stripeSecret = env.STRIPE_SECRET_KEY;
-        if (!stripeSecret) {
-            return new Response(JSON.stringify({ error: "Stripe connection error." }), {
-                status: 500,
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-            });
-        }
-
-        const params = new URLSearchParams();
-        params.append("customer", customerId);
-        if (returnUrl) {
-            params.append("return_url", returnUrl);
-        }
-
-        const stripeResponse = await fetch("https://api.stripe.com/v1/billing_portal/sessions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${stripeSecret}`,
-                "Content-Type": "application/x-www-form-urlencoded"
-            },
-            body: params.toString()
-        });
-
-        const session = await stripeResponse.json();
-
-        if (!stripeResponse.ok) {
-            throw new Error(session.error ? session.error.message : "Stripe Portal API Error");
-        }
-
-        return new Response(JSON.stringify({
-            url: session.url
-        }), {
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Content-Type"
-            }
-        });
-    } catch (e) {
-        console.error(`[Portal Error] ${e.message}`);
-        return new Response(JSON.stringify({ error: e.message }), {
-            status: 500,
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        });
-    }
+    const ext = key.split(".").pop();
+    const types = { html: "text/html", css: "text/css", js: "text/javascript", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" };
+    return new Response(asset, { headers: { "Content-Type": types[ext] || "text/plain" } });
 }

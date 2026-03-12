@@ -1,16 +1,20 @@
-name = "jira-proxy"
-main = "cloudflare_worker.js"
+name               = "jira-proxy"
+main               = "cloudflare_worker.js"
 compatibility_date = "2024-03-25"
 
 [vars]
-# Add non-sensitive variables here
-# PROXY_SECRET should be added as a secret via command line:
-# npx wrangler secret put PROXY_SECRET
+# Non-sensitive vars here.
+# Secrets via: npx wrangler secret put PROXY_SECRET
+#              npx wrangler secret put STRIPE_SECRET_KEY
+#              npx wrangler secret put STRIPE_WEBHOOK_SECRET
 
-[[kv_namespaces]]
-binding = "LICENSES"
-id = "614f5cf3ffc24382967a2dcb02f4aee2"
+# D1 database (replaces LICENSES KV for all license/login/sales data)
+[[d1_databases]]
+binding      = "DB"
+database_name = "sheetsync-licenses"
+database_id  = "80b32f3b-4c31-43d7-b9e6-2c1a9de1e5ce"
 
+# KV for static assets only
 [[kv_namespaces]]
 binding = "ASSETS"
-id = "d99a0245e7fc489a86c311c27dc3b98b"
+id      = "d99a0245e7fc489a86c311c27dc3b98b"

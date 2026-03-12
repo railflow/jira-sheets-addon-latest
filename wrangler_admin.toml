@@ -1,0 +1,24 @@
+name               = "sheetsync-admin"
+main               = "admin_worker.js"
+compatibility_date = "2024-03-25"
+workers_dev        = true
+
+# Set secrets via:
+#   npx wrangler secret put ADMIN_USERNAME --config wrangler_admin.toml
+#   npx wrangler secret put ADMIN_PASSWORD --config wrangler_admin.toml
+
+# D1 — same database as the main worker (license/login/sales data)
+[[d1_databases]]
+binding       = "DB"
+database_name = "sheetsync-licenses"
+database_id   = "80b32f3b-4c31-43d7-b9e6-2c1a9de1e5ce"
+
+# KV — used only for admin sessions and rate-limit counters
+[[kv_namespaces]]
+binding = "LICENSES"
+id      = "614f5cf3ffc24382967a2dcb02f4aee2"
+
+# Custom domain — wrangler creates the DNS record automatically
+[[routes]]
+pattern       = "admin.sheetsync.dev"
+custom_domain = true
