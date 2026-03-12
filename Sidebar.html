@@ -875,6 +875,7 @@
             useEffect(() => {
                 loadConfiguration();
                 loadLicenseInfo();
+                google.script.run.checkLicense(); // server-side login event recording — reliable email + no CORS
                 if (window.posthog && USER_EMAIL) posthog.identify(USER_EMAIL);
 
                 // Refresh license when user returns to sheet
