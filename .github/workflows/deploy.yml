@@ -15,9 +15,24 @@ on:
           - deploy
 
 jobs:
-  deploy:
+  sync-secrets:
+    name: Sync Secrets from Infisical
     runs-on: ubuntu-latest
-    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync secrets
+        env:
+          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/sync-github-secrets.sh
+
+  deploy:
+    needs: [sync-secrets]
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -57,3 +72,8 @@ jobs:
       - name: Deploy as Add-on
         run: |
           clasp deploy --description "Production deployment - $(date +'%Y-%m-%d')"
+
+      - name: Deploy Cloudflare Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy
