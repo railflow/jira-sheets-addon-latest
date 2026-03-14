@@ -50,6 +50,13 @@ jobs:
               "https://app.infisical.com/api/v3/secrets/raw/$1?workspaceId=$INFISICAL_PROJECT_ID&environment=production&secretPath=/" \
               2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['secret']['secretValue'], end='')" 2>/dev/null || true
           }
+          # Debug: check raw Infisical response (no secret values printed)
+          echo "--- Infisical debug ---"
+          curl -sS \
+            -H "Authorization: Bearer $INFISICAL_TOKEN" \
+            "https://app.infisical.com/api/v3/secrets/raw/CLOUDFLARE_API_TOKEN?workspaceId=$INFISICAL_PROJECT_ID&environment=production&secretPath=/" \
+            2>&1 | python3 -c "import sys,json; d=json.load(sys.stdin); d.get('secret') and print('CLOUDFLARE_API_TOKEN: found') or print('CLOUDFLARE_API_TOKEN: not found —', d)" 2>/dev/null || echo "CLOUDFLARE_API_TOKEN: curl/parse failed"
+          echo "-----------------------"
           PROXY_SECRET=$(get_secret PROXY_SECRET)
           CLOUDFLARE_API_TOKEN=$(get_secret CLOUDFLARE_API_TOKEN)
           # Fall back to GitHub secrets if Infisical returns empty
