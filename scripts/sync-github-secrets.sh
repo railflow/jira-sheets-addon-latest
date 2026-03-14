@@ -48,7 +48,6 @@ echo ""
 
 sync_secret "PROXY_SECRET"          "$(get_secret "PROXY_SECRET")"
 sync_secret "CLOUDFLARE_API_TOKEN"  "$(get_secret "CLOUDFLARE_API_TOKEN")"
-sync_secret "CLASP_CREDENTIALS"     "$(get_secret "CLASP_CREDENTIALS")"
 
 echo ""
 echo "✅ All GitHub secrets synced from Infisical."
