@@ -36,6 +36,16 @@ jobs:
         run: |
           echo "$CLASP_CREDENTIALS" > ~/.clasprc.json
 
+      - name: Inject secrets into Code.js
+        env:
+          PROXY_SECRET: ${{ secrets.PROXY_SECRET }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const content = fs.readFileSync('Code.js', 'utf8');
+            fs.writeFileSync('Code.js', content.replace('PROXY_SECRET_INJECT', process.env.PROXY_SECRET));
+          "
+
       - name: Push to Apps Script
         run: clasp push --force
 

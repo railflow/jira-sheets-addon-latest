@@ -17,7 +17,7 @@ export default {
                 headers: {
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Atlassian-Token, X-Proxy-Secret, X-Mock-Request",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Atlassian-Token, X-Proxy-Secret",
                 },
             });
         }
@@ -46,6 +46,25 @@ export default {
 function okJson(data)       { return new Response(JSON.stringify(data), { headers: CORS }); }
 function errJson(msg, code) { return new Response(JSON.stringify({ error: msg }), { status: code, headers: CORS }); }
 
+// In-memory rate limiter (per worker instance; provides basic protection against burst abuse)
+const _rlMap = new Map();
+function rateLimitCheck(key, maxRequests, windowMs) {
+    const now = Date.now();
+    let entry = _rlMap.get(key);
+    if (!entry || now > entry.resetAt) {
+        entry = { count: 0, resetAt: now + windowMs };
+    }
+    entry.count++;
+    _rlMap.set(key, entry);
+    return entry.count <= maxRequests;
+}
+
+function getClientIp(request) {
+    return request.headers.get("CF-Connecting-IP") ||
+           (request.headers.get("X-Forwarded-For") || "").split(",")[0].trim() ||
+           "unknown";
+}
+
 /**
  * Login event upsert — registered with ctx.waitUntil so the D1 write
  * completes even after the response is sent.
@@ -67,6 +86,12 @@ function logLogin(env, ctx, email, plan) {
 // ─── License Check ────────────────────────────────────────────────────────────
 
 async function handleLicenseCheck(request, env, ctx) {
+    // Rate limit: 20 requests per minute per IP
+    const ip = getClientIp(request);
+    if (!rateLimitCheck(`lc:${ip}`, 20, 60_000)) {
+        return new Response(JSON.stringify({ error: "Too many requests." }), { status: 429, headers: { "Content-Type": "application/json" } });
+    }
+
     try {
         const body = await request.json();
         const email = body?.email;
@@ -131,15 +156,19 @@ async function handleLicenseCheck(request, env, ctx) {
         return okJson({ allowed: false, plan: "free", status: "none", email: emailLower, message: "No active license found." });
 
     } catch (e) {
-        return new Response("License API Error: " + e.message, { status: 500 });
+        console.error("[License Check Error]", e.message);
+        return new Response(JSON.stringify({ error: "Internal server error." }), { status: 500, headers: { "Content-Type": "application/json" } });
     }
 }
 
 // ─── Sales Export ─────────────────────────────────────────────────────────────
 
 async function handleSalesExport(request, env) {
-    const secret = new URL(request.url).searchParams.get("secret");
-    if (secret !== env.PROXY_SECRET) return new Response("Unauthorized", { status: 401 });
+    const authHeader = request.headers.get("Authorization") || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token || !env.PROXY_SECRET || token !== env.PROXY_SECRET) {
+        return new Response("Unauthorized", { status: 401 });
+    }
 
     const { results } = await env.DB.prepare("SELECT * FROM sales ORDER BY created_at DESC").all();
     const header = "Date,Email,Plan,Domain,Stripe_Customer,Subscription,Amount_USD\n";
@@ -151,7 +180,6 @@ async function handleSalesExport(request, env) {
         headers: {
             "Content-Type": "text/csv",
             "Content-Disposition": "attachment; filename=jira-sync-sales.csv",
-            "Access-Control-Allow-Origin": "*",
         },
     });
 }
@@ -192,7 +220,8 @@ async function handleStripeSession(request, env) {
 
         return okJson({ message: "Session created.", url: session.url, sessionId: session.id, publishableKey: env.STRIPE_PUBLISHABLE_KEY, metadata: { email, plan } });
     } catch (e) {
-        return errJson(e.message, 500);
+        console.error("[Stripe Session Error]", e.message);
+        return errJson("Failed to create checkout session.", 500);
     }
 }
 
@@ -203,9 +232,8 @@ async function handleStripeWebhook(request, env) {
     try {
         const signature   = request.headers.get("stripe-signature");
         const bodyText    = await request.text();
-        const isMock      = request.headers.get("X-Mock-Request") === "true";
 
-        if (env.STRIPE_WEBHOOK_SECRET && !signature && !isMock) {
+        if (env.STRIPE_WEBHOOK_SECRET && !signature) {
             return new Response("Missing signature", { status: 400, headers: CORS });
         }
 
@@ -325,7 +353,7 @@ async function handleStripeWebhook(request, env) {
         return okJson({ received: true });
     } catch (e) {
         console.error(`[Webhook Error] ${e.message}`);
-        return new Response("Webhook Error: " + e.message, { status: 500, headers: CORS });
+        return new Response(JSON.stringify({ error: "Webhook processing failed." }), { status: 500, headers: CORS });
     }
 }
 
@@ -367,14 +395,15 @@ async function handleStripePortal(request, env) {
         return okJson({ url: session.url });
     } catch (e) {
         console.error(`[Portal Error] ${e.message}`);
-        return errJson(e.message, 500);
+        return errJson("Failed to create portal session.", 500);
     }
 }
 
 // ─── Jira Proxy ───────────────────────────────────────────────────────────────
 
 async function handleProxy(request, env) {
-    const proxySecret = env.PROXY_SECRET || "your-shared-secret-here";
+    const proxySecret = env.PROXY_SECRET;
+    if (!proxySecret) return new Response("Server configuration error.", { status: 500 });
     const url = new URL(request.url);
     const targetUrl = url.searchParams.get("target");
 
@@ -429,7 +458,8 @@ async function handleProxy(request, env) {
             headers: responseHeaders,
         });
     } catch (e) {
-        return new Response("Proxy Error: " + e.message, { status: 500, headers: CORS });
+        console.error("[Proxy Error]", e.message);
+        return new Response(JSON.stringify({ error: "Proxy request failed." }), { status: 500, headers: CORS });
     }
 }
 

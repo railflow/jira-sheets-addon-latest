@@ -4,9 +4,13 @@ compatibility_date = "2024-03-25"
 
 [vars]
 # Non-sensitive vars here.
-# Secrets via: npx wrangler secret put PROXY_SECRET
-#              npx wrangler secret put STRIPE_SECRET_KEY
-#              npx wrangler secret put STRIPE_WEBHOOK_SECRET
+# Required secrets (set via `npx wrangler secret put`):
+#   PROXY_SECRET            — shared secret for the Jira proxy (must also be in GAS Script Properties)
+#   STRIPE_SECRET_KEY       — Stripe secret key
+#   STRIPE_WEBHOOK_SECRET   — Stripe webhook signing secret
+# Also set for admin_worker:
+#   ADMIN_USERNAME          — admin panel username (no default)
+#   ADMIN_PASSWORD          — admin panel password (no default)
 
 # D1 database (replaces LICENSES KV for all license/login/sales data)
 [[d1_databases]]

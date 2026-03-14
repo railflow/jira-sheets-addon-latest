@@ -2,9 +2,9 @@
  * SheetSync Admin Panel — admin.sheetsync.dev
  * Cloudflare Worker: serves a self-contained SPA admin dashboard
  *
- * Secrets to set via `wrangler secret put`:
- *   ADMIN_USERNAME  (default: admin)
- *   ADMIN_PASSWORD  (default: M697~cUzqmQF)
+ * Required secrets (set via `wrangler secret put`):
+ *   ADMIN_USERNAME
+ *   ADMIN_PASSWORD
  */
 
 const MAX_ATTEMPTS = 5;
@@ -82,8 +82,12 @@ async function handleLogin(request, env) {
   try { body = await request.json(); } catch { return json({ error: 'Bad request' }, 400); }
   const { username, password, remember } = body;
 
-  const expectedUser = env.ADMIN_USERNAME || 'admin';
-  const expectedPass = env.ADMIN_PASSWORD || 'M697~cUzqmQF';
+  const expectedUser = env.ADMIN_USERNAME;
+  const expectedPass = env.ADMIN_PASSWORD;
+
+  if (!expectedUser || !expectedPass) {
+    return json({ error: 'Admin panel is not configured. Set ADMIN_USERNAME and ADMIN_PASSWORD secrets.' }, 503);
+  }
 
   if (username !== expectedUser || password !== expectedPass) {
     rl.attempts = (rl.attempts || 0) + 1;

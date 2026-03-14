@@ -7,7 +7,14 @@ const APP_TITLE = "Sync Sheets for JIRA";
 const APP_VERSION = "2.1.0";
 const BUILD_DATE = "2026-03-09 12:37:43";
 const CLOUDFLARE_WORKER_URL = "https://jira-proxy.railflow.workers.dev"; // Bakes the proxy URL into the addon
-const PROXY_SECRET = "jira-sheets-secret-2026"; // Must match the secret in cloudflare_worker.js
+// CI replaces the placeholder below with the real secret before `clasp push`.
+// For local dev, set PROXY_SECRET manually in the Apps Script editor:
+//   Project Settings > Script Properties > PROXY_SECRET
+function getProxySecret() {
+    const injected = 'PROXY_SECRET_INJECT';
+    if (injected !== 'PROXY_SECRET_INJECT') return injected;
+    return PropertiesService.getScriptProperties().getProperty('PROXY_SECRET') || '';
+}
 
 function onOpen() {
     SpreadsheetApp.getUi().createAddonMenu()
@@ -300,9 +307,9 @@ function saveConfig(config) {
     }
     const sheetId = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getSheetId();
 
-    // Save Credentials Globally
+    // Save Credentials to UserProperties (per-user, not shared with other document editors)
     if (config.domain && config.email && config.token) {
-        props.setProperty('jira_creds', JSON.stringify({
+        PropertiesService.getUserProperties().setProperty('jira_creds', JSON.stringify({
             domain: config.domain,
             email: config.email,
             token: config.token,
@@ -332,8 +339,9 @@ function loadConfig() {
         const sheet = ss.getActiveSheet();
         const sheetId = sheet.getSheetId();
 
-        // Load Global Creds
-        const credsJson = props.getProperty('jira_creds');
+        // Load Credentials from UserProperties (per-user); fall back to DocumentProperties for migration
+        const userCredsJson = PropertiesService.getUserProperties().getProperty('jira_creds');
+        const credsJson = userCredsJson || props.getProperty('jira_creds');
         let creds = {};
         if (credsJson) {
             try { creds = JSON.parse(credsJson); } catch (e) { }
@@ -4651,7 +4659,7 @@ function fetchJira(url, options, config) {
 
         // Add Proxy Secret to headers
         fetchOptions.headers = fetchOptions.headers || {};
-        fetchOptions.headers["X-Proxy-Secret"] = PROXY_SECRET;
+        fetchOptions.headers["X-Proxy-Secret"] = getProxySecret();
 
         // Track calls
         if (config && typeof config.proxyCallCount === 'number') {
@@ -4672,7 +4680,7 @@ function fetchAllJira(requests, config) {
         const proxiedRequests = requests.map(req => {
             const workerUrlString = CLOUDFLARE_WORKER_URL + (CLOUDFLARE_WORKER_URL.includes('?') ? '&' : '?') + "target=" + encodeURIComponent(req.url);
             const newHeaders = { ...(req.headers || {}) };
-            newHeaders["X-Proxy-Secret"] = PROXY_SECRET;
+            newHeaders["X-Proxy-Secret"] = getProxySecret();
 
             return {
                 ...req,

@@ -876,7 +876,13 @@
                 loadConfiguration();
                 loadLicenseInfo();
                 google.script.run.checkLicense(); // server-side login event recording — reliable email + no CORS
-                if (window.posthog && USER_EMAIL) posthog.identify(USER_EMAIL);
+                if (window.posthog && USER_EMAIL) {
+                    crypto.subtle.digest('SHA-256', new TextEncoder().encode(USER_EMAIL.toLowerCase()))
+                        .then(buf => {
+                            const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+                            posthog.identify(hash);
+                        });
+                }
 
                 // Refresh license when user returns to sheet
                 const handleFocus = () => loadLicenseInfo();
