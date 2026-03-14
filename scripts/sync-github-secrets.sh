@@ -27,7 +27,7 @@ get_secret() {
   local name="$1"
   curl -fsSL \
     -H "Authorization: Bearer $INFISICAL_TOKEN" \
-    "$INFISICAL_HOST/api/v3/secrets/raw/$name?workspaceId=$INFISICAL_PROJECT_ID&environment=production&secretPath=/" \
+    "$INFISICAL_HOST/api/v3/secrets/raw/$name?workspaceId=$INFISICAL_PROJECT_ID&environment=prod&secretPath=/" \
     2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['secret']['secretValue'], end='')" 2>/dev/null || true
 }
 
