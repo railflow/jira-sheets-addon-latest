@@ -88,14 +88,11 @@ jobs:
       - name: Push to Apps Script
         run: clasp push --force
 
-      - name: Create new version
-        run: |
-          VERSION_DESC="2.0.3"
-          clasp version "$VERSION_DESC"
-
       - name: Deploy as Add-on
+        env:
+          CLASP_DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
         run: |
-          clasp deploy --description "Production deployment - $(date +'%Y-%m-%d')"
+          clasp deploy --deploymentId $CLASP_DEPLOYMENT_ID --description "Production deployment - $(date +'%Y-%m-%d')"
 
       - name: Deploy Cloudflare Worker
         run: npx wrangler deploy
