@@ -225,6 +225,47 @@ async function handleStripeSession(request, env) {
     }
 }
 
+// ─── Stripe Webhook Signature Verification ────────────────────────────────────
+
+async function verifyStripeSignature(bodyText, sigHeader, secret) {
+    // sigHeader format: "t=<timestamp>,v1=<hmac>,v1=<hmac>..."
+    const parts = {};
+    for (const part of sigHeader.split(',')) {
+        const idx = part.indexOf('=');
+        if (idx !== -1) {
+            const k = part.slice(0, idx);
+            const v = part.slice(idx + 1);
+            if (k === 'v1') {
+                parts.v1 = parts.v1 || [];
+                parts.v1.push(v);
+            } else {
+                parts[k] = v;
+            }
+        }
+    }
+    if (!parts.t || !parts.v1?.length) throw new Error('Malformed stripe-signature header');
+
+    // Reject if timestamp is older than 5 minutes (replay attack prevention)
+    const tolerance = 300;
+    if (Math.abs(Date.now() / 1000 - Number(parts.t)) > tolerance) {
+        throw new Error('Webhook timestamp too old');
+    }
+
+    const payload = `${parts.t}.${bodyText}`;
+    const key = await crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+    const signatureBytes = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+    const expected = Array.from(new Uint8Array(signatureBytes))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (!parts.v1.includes(expected)) throw new Error('Signature mismatch');
+}
+
 // ─── Stripe Webhook ───────────────────────────────────────────────────────────
 
 async function handleStripeWebhook(request, env) {
@@ -233,8 +274,18 @@ async function handleStripeWebhook(request, env) {
         const signature   = request.headers.get("stripe-signature");
         const bodyText    = await request.text();
 
-        if (env.STRIPE_WEBHOOK_SECRET && !signature) {
+        if (!env.STRIPE_WEBHOOK_SECRET) {
+            console.error("[Webhook] STRIPE_WEBHOOK_SECRET not configured — rejecting");
+            return new Response("Webhook secret not configured", { status: 500, headers: CORS });
+        }
+        if (!signature) {
             return new Response("Missing signature", { status: 400, headers: CORS });
+        }
+        try {
+            await verifyStripeSignature(bodyText, signature, env.STRIPE_WEBHOOK_SECRET);
+        } catch (e) {
+            console.error(`[Webhook] Signature verification failed: ${e.message}`);
+            return new Response("Invalid signature", { status: 400, headers: CORS });
         }
 
         const event = JSON.parse(bodyText);

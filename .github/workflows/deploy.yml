@@ -59,9 +59,13 @@ jobs:
           echo "-----------------------"
           PROXY_SECRET=$(get_secret PROXY_SECRET)
           CLOUDFLARE_API_TOKEN=$(get_secret CLOUDFLARE_API_TOKEN)
+          STRIPE_WEBHOOK_SECRET=$(get_secret STRIPE_WEBHOOK_SECRET)
+          STRIPE_SECRET_KEY=$(get_secret STRIPE_SECRET_KEY)
           # Fall back to GitHub secrets if Infisical returns empty
           echo "PROXY_SECRET=${PROXY_SECRET:-$GH_PROXY_SECRET}" >> $GITHUB_ENV
           echo "CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-$GH_CLOUDFLARE_API_TOKEN}" >> $GITHUB_ENV
+          echo "STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET" >> $GITHUB_ENV
+          echo "STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY" >> $GITHUB_ENV
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -93,6 +97,11 @@ jobs:
           CLASP_DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
         run: |
           clasp deploy --deploymentId $CLASP_DEPLOYMENT_ID --description "Production deployment - $(date +'%Y-%m-%d')"
+
+      - name: Sync Cloudflare Worker secrets
+        run: |
+          echo "$STRIPE_WEBHOOK_SECRET" | npx wrangler secret put STRIPE_WEBHOOK_SECRET
+          echo "$STRIPE_SECRET_KEY"     | npx wrangler secret put STRIPE_SECRET_KEY
 
       - name: Deploy Cloudflare Worker
         run: npx wrangler deploy
